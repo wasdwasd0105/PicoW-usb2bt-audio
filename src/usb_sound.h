@@ -1,0 +1,1 @@
+void * usb_audio_main(void);
