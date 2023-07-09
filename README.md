@@ -1,7 +1,8 @@
 # PicoW USB Bluetooth Audio Adapter
-Use Raspberry Pico W as a USB to Bluetooth Audio Adapter. Tested on MacOS, Windows, Linux and NS Switch
+Use Raspberry Pico W as a USB to Bluetooth Audio Adapter. Tested on MacOS, Windows, Linux, and Nintendo Switch
 
-[![video demo](http://img.youtube.com/vi/Dilagi7l4xc/0.jpg)](http://www.youtube.com/watch?v=Dilagi7l4xc "Video Title")
+Video Demo:
+[![video demo](http://img.youtube.com/vi/Dilagi7l4xc/0.jpg)](http://www.youtube.com/watch?v=Dilagi7l4xc "")
 
 ## Install 
 Download the .uf2 firmware, and use this [guide](https://www.okdo.com/getting-started/get-started-with-raspberry-pi-pico/) to install.
