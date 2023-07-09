@@ -1,6 +1,6 @@
 # PicoW USB Audio to Bluetooth Adapter
 Use Raspberry Pi Pico W as a USB to Bluetooth Audio Adapter. Tested on MacOS, Windows, Linux, and Nintendo Switch.
-It utilizes BtStack for Bluetooth function. Now it only supports sbc codec.
+It utilizes BTstack for Bluetooth functions. Now it only supports sbc codec.
 
 Video Demo:
    
