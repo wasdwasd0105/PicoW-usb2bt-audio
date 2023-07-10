@@ -26,7 +26,7 @@ CU_REGISTER_DEBUG_PINS(audio_timing)
 static char *descriptor_strings[] =
         {
                 "Raspberry Pi",
-                "USB Bluetooth Audio",
+                "Pico W USB Bluetooth Audio",
                 "0123456789AB"
         };
 

@@ -62,7 +62,12 @@ void check_bootsel_state(){
 
         else if (bootsel_state_counter > 5){
             printf("key prassed short!\n");
-            bt_usb_resync_counter();
+            if (get_a2dp_connected_flag() == false){
+                a2dp_source_reconnect();
+            }else{
+                bt_usb_resync_counter();
+            }
+                        
         }
         bootsel_state_counter = 0;
     }

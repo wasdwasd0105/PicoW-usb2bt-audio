@@ -142,7 +142,7 @@ typedef struct {
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 
 // Minijambox:
-static const char * device_addr_string = "00:21:3C:AC:F7:38";
+static const char * device_addr_string = "00:00:00:00:00:00";
 
 static bd_addr_t device_addr;
 static bool scan_active;
@@ -298,6 +298,8 @@ static int a2dp_source_and_avrcp_services_init(void){
     hci_add_event_handler(&hci_event_callback_registration);
 
     data_source = STREAM_MOD;
+
+    list_link_keys();
 
     // Parse human readable Bluetooth address.
     sscanf_bd_addr(device_addr_string, device_addr);
@@ -474,6 +476,31 @@ static void a2dp_source_demo_start_scanning(void){
     scan_active = true;
 }
 
+
+/* @section GAP Link Key Logic 
+ *
+ * @text List stored link keys
+ */ 
+static void list_link_keys(void){
+    bd_addr_t  addr;
+    link_key_t link_key;
+    link_key_type_t type;
+    btstack_link_key_iterator_t it;
+
+    int ok = gap_link_key_iterator_init(&it);
+    if (!ok) {
+        printf("Link key iterator not implemented\n");
+        return;
+    }
+    printf("Stored link keys: \n");
+    while (gap_link_key_iterator_get_next(&it, addr, link_key, &type)){
+        printf("%s - type %u, key: ", bd_addr_to_str(addr), (int) type);
+        printf_hexdump(link_key, 16);
+    }
+    printf(".\n");
+    gap_link_key_iterator_done(&it);
+}
+
 static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
     UNUSED(size);
@@ -518,6 +545,9 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             if ((cod & bluetooth_speaker_cod) == bluetooth_speaker_cod){
                 memcpy(device_addr, address, 6);
                 printf("Bluetooth speaker detected, trying to connect to %s...\n", bd_addr_to_str(device_addr));
+
+                //gap_store_link_key_for_bd_addr(device_addr, NULL, COMBINATION_KEY);
+                
                 scan_active = false;
                 gap_inquiry_stop();
                 a2dp_source_establish_stream(device_addr, &media_tracker.a2dp_cid);
@@ -533,6 +563,13 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             break;
     }
 }
+
+bool a2dp_is_connected_flag = false;
+
+bool get_a2dp_connected_flag(){
+    return a2dp_is_connected_flag;    
+}
+
 
 static void a2dp_source_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
@@ -675,7 +712,7 @@ static void a2dp_source_packet_handler(uint8_t packet_type, uint16_t channel, ui
                 avrcp_target_set_now_playing_info(media_tracker.avrcp_cid, &tracks[data_source], sizeof(tracks)/sizeof(avrcp_track_t));
                 avrcp_target_set_playback_status(media_tracker.avrcp_cid, AVRCP_PLAYBACK_STATUS_PLAYING);
             }
-            
+            a2dp_is_connected_flag = true;
             a2dp_demo_timer_start(&media_tracker);
             printf("A2DP Source: Stream started, a2dp_cid 0x%02x, local_seid 0x%02x\n", cid, local_seid);
             break;
@@ -723,6 +760,7 @@ static void a2dp_source_packet_handler(uint8_t packet_type, uint16_t channel, ui
                 media_tracker.avrcp_cid = 0;
                 media_tracker.a2dp_cid = 0;
                 printf("A2DP Source: Signaling released.\n\n");
+                a2dp_is_connected_flag = false;
             }
             break;
         default:
@@ -878,6 +916,13 @@ static void show_usage(void){
 
     printf("---\n");
 }
+
+void a2dp_source_reconnect(){
+    a2dp_source_establish_stream(device_addr, &media_tracker.a2dp_cid);
+    avrcp_connect(device_addr, &media_tracker.avrcp_cid);
+    printf(" Create A2DP Source connection to addr %s, cid 0x%02x.\n", bd_addr_to_str(device_addr), media_tracker.a2dp_cid);
+}
+
 
 static void stdin_process(char cmd){
     uint8_t status = ERROR_CODE_SUCCESS;
