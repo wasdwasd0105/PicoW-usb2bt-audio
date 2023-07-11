@@ -15,6 +15,7 @@ Download the .uf2 firmware, and use this [guide](https://www.okdo.com/getting-st
 3. Put the Bluetooth speakers/headphones on pairing mode. Raspberry Pico W will make auto-connect.
 4. Play some music. If the sound has noise. Short press the key for times until the sound is clear.
 5. Long press the key and release to disconnect and pair a new device.
+6. When you disconnect the Bluetooth headphone but not power off the Pico W, you can reconnect the headphone by short pressing the key.
 
 ## Green LED light
 1. Blinking: streaming audio
