@@ -5,7 +5,7 @@ With Pico W Adapter, you can easily transmit audio wirelessly from your USB audi
 
 
 <p align="center">
-<img alt="WiFi Duck Logo" src="logo.png" width="200">
+<img alt="Logo" src="logo.png" width="200">
 </p>
 
 ### Driver-Free Setup
@@ -58,10 +58,6 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 1. **Blinking:** When the Green LED light is blinking, it indicates that audio is currently streaming.
 
 2. **On (Steady Light):** When the Green LED light is on, it means that the PicoW Adapter is in pairing mode, ready to connect with a Bluetooth audio device.
-
-
-The compile section is where you provide instructions on how to build your project from source code. Here's a more detailed version of your compile section based on the original instructions:
-
 
 
 ## Compile & Debug
