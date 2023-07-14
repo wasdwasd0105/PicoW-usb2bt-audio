@@ -18,7 +18,6 @@ Pico W Bluetooth Adapter utilizes the sbc codec to deliver high-quality audio. I
 
 [![video demo](http://img.youtube.com/vi/Dilagi7l4xc/0.jpg)](http://www.youtube.com/watch?v=Dilagi7l4xc "")
 
----
 
 ## Installation
 
@@ -32,7 +31,6 @@ Installing the Pico W USB Audio to Bluetooth Adapter firmware involves flashing 
 
 4. **Reset the Pico:** Once the UF2 file has been copied onto the Pico, it will automatically reset and start running the new firmware. 
 
----
 
 
 ## Usage
@@ -53,7 +51,6 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
 7. **Reconnecting a device:** If you disconnect the Bluetooth headphone but do not power off the Pico W, you can reconnect the headphone by short pressing the 'BOOTSEL' button.
 
----
 
 
 ## Green LED light Status Indicator
@@ -65,7 +62,7 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
 The compile section is where you provide instructions on how to build your project from source code. Here's a more detailed version of your compile section based on the original instructions:
 
----
+
 
 ## Compile & Debug
 
@@ -94,9 +91,6 @@ This script should compile the project and produce a UF2 firmware file that you 
 Sure, here's a draft of an Acknowledgments section based on the information you provided:
 
 
-
----
-
 ## Acknowledgments
 
 This project wouldn't have been possible without the foundational work provided by the following projects:
@@ -106,8 +100,6 @@ This project wouldn't have been possible without the foundational work provided 
 2. [a2dp_source_demo](https://github.com/bluekitchen/btstack/blob/master/example/a2dp_source_demo.c): The Advanced Audio Distribution Profile (A2DP) source demo provided by the BTstack.
 
 
-
----
 
 ## License
 
