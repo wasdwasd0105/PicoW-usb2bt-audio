@@ -3,7 +3,8 @@ The Pico W USB Audio to Bluetooth Adapter transforms your Raspberry Pi Pico W in
 It allows any device with a USB input, including MacOS, Windows, Linux, Nintendo Switch, PS4/PS5, and more, to gain Bluetooth Audio capability. 
 With Pico W Adapter, you can easily transmit audio wirelessly from your USB audio source to your Bluetooth headphones or speaker, enhancing your listening experience.
 
-Please buy me a coffee! [PayPal](https://www.paypal.com/donate/?business=UZAK3WFV233ML&no_recurring=0&item_name=Help+me+build+more+project%21&currency_code=USD) or [Ko-fi](https://Ko-fi.com/wasdwasd0105)
+To make sure we can keep working on free and open-source projects like this,  
+**please consider becoming a [:heart: Sponsor via PayPal](https://www.paypal.com/donate/?business=UZAK3WFV233ML&no_recurring=0&item_name=Help+me+build+more+project%21&currency_code=USD) or support us via [:coffee: Ko-fi](https://ko-fi.com/wasdwasd0105).**  
 
 
 <p align="center">
