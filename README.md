@@ -87,9 +87,6 @@ This script should compile the project and produce a UF2 firmware file that you 
 4. **Debug Serial input/output:** You can use uart to see the debug info. Connect the GPIO 0 and 1 as TX and RX. To enable BTstack's serial input, you can uncomment `HAVE_BTSTACK_STDIN` under btstack_config.h
     
 
-Sure, here's a draft of an Acknowledgments section based on the information you provided:
-
-
 ## Acknowledgments
 
 This project wouldn't have been possible without the foundational work provided by the following projects:
