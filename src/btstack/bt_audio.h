@@ -19,6 +19,6 @@ bool get_a2dp_connected_flag();
 
 void a2dp_source_reconnect();
 
-static void list_link_keys();
+static void get_first_link_key();
 
 static bool bt_audio_ready;

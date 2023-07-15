@@ -142,7 +142,7 @@ typedef struct {
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 
 // Minijambox:
-static const char * device_addr_string = "00:00:00:00:00:00";
+static char device_addr_string[] = "00:00:00:00:00:00";
 
 static bd_addr_t device_addr;
 static bool scan_active;
@@ -299,7 +299,7 @@ static int a2dp_source_and_avrcp_services_init(void){
 
     data_source = STREAM_MOD;
 
-    list_link_keys();
+    get_first_link_key();
 
     // Parse human readable Bluetooth address.
     sscanf_bd_addr(device_addr_string, device_addr);
@@ -477,25 +477,25 @@ static void a2dp_source_demo_start_scanning(void){
 }
 
 
-/* @section GAP Link Key Logic 
- *
- * @text List stored link keys
- */ 
-static void list_link_keys(void){
+static void get_first_link_key(void){
     bd_addr_t  addr;
     link_key_t link_key;
     link_key_type_t type;
     btstack_link_key_iterator_t it;
+    const char * addr_str;
 
     int ok = gap_link_key_iterator_init(&it);
     if (!ok) {
         printf("Link key iterator not implemented\n");
         return;
     }
-    printf("Stored link keys: \n");
-    while (gap_link_key_iterator_get_next(&it, addr, link_key, &type)){
-        printf("%s - type %u, key: ", bd_addr_to_str(addr), (int) type);
+    printf("Stored First link key: \n");
+
+    if (gap_link_key_iterator_get_next(&it, addr, link_key, &type)){
+        addr_str = bd_addr_to_str(addr);
+        printf("%s - type %u, key: ", addr_str, (int) type);
         printf_hexdump(link_key, 16);
+        strncpy(device_addr_string, addr_str, sizeof(device_addr_string) - 1);
     }
     printf(".\n");
     gap_link_key_iterator_done(&it);
@@ -949,6 +949,7 @@ static void stdin_process(char cmd){
         case 'D':
             printf("Deleting all link keys\n");
             gap_delete_all_link_keys();
+            printf("Finished\n");
             break;
         case '\n':
         case '\r':
@@ -995,10 +996,8 @@ static void stdin_process(char cmd){
             if (media_tracker.avrcp_cid){
                 avrcp_target_set_now_playing_info(media_tracker.avrcp_cid, &tracks[data_source], sizeof(tracks)/sizeof(avrcp_track_t));
             }
-            printf("%c - Play mod.\n", cmd);
-            data_source = STREAM_MOD;
-            if (!media_tracker.stream_opened) break;
-            status = a2dp_source_start_stream(media_tracker.a2dp_cid, media_tracker.local_seid);
+            printf("%c - get first link key.\n", cmd);
+            get_first_link_key();
             break;
         
         case 'p':
@@ -1054,6 +1053,7 @@ void bt_disconnect_and_scan(){
     avrcp_disconnect(media_tracker.avrcp_cid);
     shared_audio_counter = 0;
     led_counter = 0;
+    gap_delete_all_link_keys();
     a2dp_source_demo_start_scanning();
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 }

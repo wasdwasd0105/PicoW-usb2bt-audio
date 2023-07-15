@@ -77,8 +77,8 @@ void check_bootsel_state(){
 int main() {
 
     // enable to use uart see debug info
-    // stdio_init_all();
-    // stdout_uart_init();
+    //stdio_init_all();
+    //stdout_uart_init();
 
     multicore_launch_core1(usb_audio_main());
 

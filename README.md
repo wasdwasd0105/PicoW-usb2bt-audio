@@ -52,7 +52,7 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
 6. **Pairing a new device:** To pair a new device, long press the 'BOOTSEL' button on the Pico W and release it. Then, put the new Bluetooth device into pairing mode. The Pico W will automatically connect to it.
 
-7. **Reconnecting a device:** If you disconnect the Bluetooth headphone but do not power off the Pico W, you can reconnect the headphone by short pressing the 'BOOTSEL' button.
+7. **Reconnecting a device:** You can reconnect the headphone by short pressing the 'BOOTSEL' button.
 
 
 
