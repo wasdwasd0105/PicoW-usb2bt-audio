@@ -1,5 +1,5 @@
 // AUDIO_BUF_POOL_LEN is the len of pool that share usb audio to bt
-#define AUDIO_BUF_POOL_LEN 4096
+#define AUDIO_BUF_POOL_LEN 2560
 
 // enable to show bt debug info
 //#define HAVE_BTSTACK_STDIN
@@ -20,5 +20,7 @@ bool get_a2dp_connected_flag();
 void a2dp_source_reconnect();
 
 static void get_first_link_key();
+
+void push_usb_buf_counter(uint16_t counter);
 
 static bool bt_audio_ready;

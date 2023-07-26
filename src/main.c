@@ -6,13 +6,14 @@
 #include <stdio.h>
 #include "pico/multicore.h"
 
+#include "btstack_event.h"
+
 #include "hardware/gpio.h"
 #include "hardware/sync.h"
 #include "hardware/structs/ioqspi.h"
 #include "hardware/structs/sio.h"
 
-// modified by wasdwasd0105
-
+// wasdwasd0105
 
 
 bool __no_inline_not_in_flash_func(get_bootsel_button)() {
@@ -74,13 +75,35 @@ void check_bootsel_state(){
 
 }
 
+static btstack_packet_callback_registration_t hci_event_callback_registration;
+
+
+static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
+    UNUSED(size);
+    UNUSED(channel);
+    bd_addr_t local_addr;
+    if (packet_type != HCI_EVENT_PACKET) return;
+    switch(hci_event_packet_get_type(packet)){
+        case BTSTACK_EVENT_STATE:
+            if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) return;
+            gap_local_bd_addr(local_addr);
+            printf("BTstack up and running on %s.\n", bd_addr_to_str(local_addr));
+            break;
+        default:
+            break;
+    }
+}
+
+
 int main() {
 
-    // enable to use uart see debug info
-    //stdio_init_all();
-    //stdout_uart_init();
+    // // enable to use uart see debug info
+    // stdio_init_all();
+    // stdout_uart_init();
 
     multicore_launch_core1(usb_audio_main());
+
+    //usb_audio_main();
 
     printf("init ctw43.\n");
 
@@ -89,9 +112,15 @@ int main() {
         printf("cyw43_arch_init() failed.\n");
         return -1;
     }
+
+    // inform about BTstack state
+    hci_event_callback_registration.callback = &packet_handler;
+    hci_add_event_handler(&hci_event_callback_registration);
+
     btstack_main(0, NULL);
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 
+    //btstack_run_loop_execute();
 
     while (1) {
         //printf("get_bootsel_button is %d\n", get_bootsel_button());

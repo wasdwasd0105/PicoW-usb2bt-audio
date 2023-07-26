@@ -174,20 +174,15 @@ typedef struct {
     uint32_t song_position_ms; // 0xFFFFFFFF if not supported
 } avrcp_play_status_info_t;
 
-// python -c "print('a'*512)"
-static const char title[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 avrcp_track_t tracks[] = {
-    {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, 1, "Sine", "Generated", "A2DP Source Demo", "monotone", 12345},
-    {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}, 2, "Nao-deceased", "Decease", "A2DP Source Demo", "vivid", 12345},
-    {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03}, 3, (char *)title, "Decease", "A2DP Source Demo", "vivid", 12345},
+    {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}, 2, "USB Audio", "Pico", "A2DP Source", "vivid", 12345},
 };
 int current_track_index;
 avrcp_play_status_info_t play_info;
 
 
 static bool bt_audio_ready = 0;
-
 
 /* AVRCP Target context END */
 
@@ -334,25 +329,29 @@ static void a2dp_demo_send_media_packet(void){
 
 
 bool bt_steam_ready = 0;
+int shared_audio_counter = 0;
+int16_t * shared_audio_ptr;
+bool a2dp_is_connected_flag = false;
+
+uint8_t led_counter = 0;
+
+bool get_a2dp_connected_flag(){
+    return a2dp_is_connected_flag;    
+}
 
 bool bt_audio_steam_ready(void){
     return bt_steam_ready;
 }
 
-
-bool lock_shared_audio_buffer = 0;
-
-bool get_audio_buffer_lock() {
-    return lock_shared_audio_buffer;
-}
-
-int16_t * shared_audio_ptr;
-
 void set_shared_audio_buffer(int16_t *data) {
     shared_audio_ptr = data;
 }
 
-int shared_audio_counter = 0;
+uint16_t usb_audio_buf_counter = 0;
+
+void push_usb_buf_counter(uint16_t counter){
+    usb_audio_buf_counter = counter;
+}
 
 
 static int a2dp_demo_fill_sbc_audio_buffer(a2dp_media_sending_context_t * context){
@@ -363,7 +362,15 @@ static int a2dp_demo_fill_sbc_audio_buffer(a2dp_media_sending_context_t * contex
     while (context->samples_ready >= num_audio_samples_per_sbc_buffer &&
      (context->max_media_payload_size - context->sbc_storage_count) >= btstack_sbc_encoder_sbc_buffer_length()){
 
-        //printf("buf_counter is %d\n", buf_counter);
+
+        // Check if usb_audio_buf_counter is in the range of shared_audio_counter and shared_audio_counter + num_audio_samples_per_sbc_buffer * 2
+        if (shared_audio_counter < usb_audio_buf_counter && usb_audio_buf_counter < (shared_audio_counter + num_audio_samples_per_sbc_buffer * 2)){
+            // If so, wait until more data is written
+            sleep_ms(1);
+            break;
+        }
+
+        //printf("current usb buf is %d, sbc buf is %d\n", usb_audio_buf_counter, shared_audio_counter);
 
         btstack_sbc_encoder_process_data(&shared_audio_ptr[shared_audio_counter]);
 
@@ -386,12 +393,8 @@ static int a2dp_demo_fill_sbc_audio_buffer(a2dp_media_sending_context_t * contex
         }        
 
     }
-
-    lock_shared_audio_buffer = 1;
-    return total_num_bytes_read;
+        return total_num_bytes_read;
 }
-
-uint8_t led_counter = 0;
 
 
 static void a2dp_demo_audio_timeout_handler(btstack_timer_source_t * timer){
@@ -403,10 +406,10 @@ static void a2dp_demo_audio_timeout_handler(btstack_timer_source_t * timer){
     led_counter++;
 
     if(led_counter == 50){
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+        //cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
     }
     if(led_counter == 100){
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+    //cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
         led_counter = 0;
     }
     
@@ -564,11 +567,6 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
     }
 }
 
-bool a2dp_is_connected_flag = false;
-
-bool get_a2dp_connected_flag(){
-    return a2dp_is_connected_flag;    
-}
 
 
 static void a2dp_source_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
@@ -1067,8 +1065,6 @@ void bt_usb_resync_counter(){
 }
 
 
-
-int btstack_main(int argc, const char * argv[]);
 int btstack_main(int argc, const char * argv[]){
     (void)argc;
     (void)argv;
