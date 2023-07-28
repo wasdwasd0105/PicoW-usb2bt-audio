@@ -48,7 +48,7 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
 4. **Start playing audio:** Once everything is set up, you can start playing audio from your source device. The audio will be streamed to your Bluetooth device via the Pico W.
 
-5. **Resolving noise issues:** Due to a known issue with the current firmware, the audio stream may have noise when the connection is out of sync. If this happens, you can resync the connection by short pressing the 'BOOTSEL' button on the Pico W several times until the sound becomes clear.
+5. **Resolving noise issues:** The audio stream may have noise when the connection is out of sync. If this happens, you can resync the connection by short pressing the 'BOOTSEL' button on the Pico W several times until the sound becomes clear.
 
 6. **Pairing a new device:** To pair a new device, long press the 'BOOTSEL' button on the Pico W and release it. Then, put the new Bluetooth device into pairing mode. The Pico W will automatically connect to it.
 
@@ -69,7 +69,7 @@ In order to compile the PicoW USB Audio to Bluetooth Adapter firmware from sourc
 
 1. **Prepare your environment:** Make sure that you have a working development environment for Raspberry Pi Pico projects. This includes having the required compiler and tools installed. You may refer to the [Getting started with Raspberry Pi Pico](https://www.raspberrypi.org/documentation/rp2040/getting-started/) guide for detailed instructions.
 
-2. **Set the necessary environment variables:** Before you can build the project, you need to set two environment variables: `PICO_SDK_PATH` and `PICO_EXTRAS_PATH`. For example:
+2. **Set environment variables:** Before you can build the project, you need to set two environment variables: `PICO_SDK_PATH` and `PICO_EXTRAS_PATH`. For example:
 
 ```bash
 export PICO_SDK_PATH=~/pico-sdk
