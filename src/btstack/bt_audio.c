@@ -76,6 +76,7 @@
 #include "bt_audio.h"
 
 #include "pico/multicore.h"
+#include "../pico_w_led.h"
 
 
 // logarithmic volume reduction, samples are divided by 2^x
@@ -90,11 +91,6 @@
 
 #define SBC_STORAGE_SIZE 1030
 
-typedef enum {
-    STREAM_SINE = 0,
-    STREAM_MOD,
-    STREAM_PTS_TEST
-} stream_data_source_t;
     
 typedef struct {
     uint16_t a2dp_cid;
@@ -158,8 +154,6 @@ static btstack_sbc_encoder_state_t sbc_encoder_state;
 static uint8_t media_sbc_codec_configuration[4];
 static a2dp_media_sending_context_t media_tracker;
 
-static stream_data_source_t data_source;
-
 static int sine_phase;
 static int current_sample_rate = 44100;
 static int new_sample_rate = 44100;
@@ -176,7 +170,7 @@ typedef struct {
 
 
 avrcp_track_t tracks[] = {
-    {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}, 2, "USB Audio", "Pico", "A2DP Source", "vivid", 12345},
+    {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02}, 2, "USB Audio", "Pico", "wasdwasd0105", "vivid", 12345},
 };
 int current_track_index;
 avrcp_play_status_info_t play_info;
@@ -292,8 +286,6 @@ static int a2dp_source_and_avrcp_services_init(void){
     hci_event_callback_registration.callback = &hci_packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
 
-    data_source = STREAM_MOD;
-
     get_first_link_key();
 
     // Parse human readable Bluetooth address.
@@ -328,18 +320,19 @@ static void a2dp_demo_send_media_packet(void){
 }
 
 
-bool bt_steam_ready = 0;
-int shared_audio_counter = 0;
-int16_t * shared_audio_ptr;
-bool a2dp_is_connected_flag = false;
+static bool bt_steam_ready = 0;
+static int shared_audio_counter = 0;
+static int16_t * shared_audio_ptr;
+static bool a2dp_is_connected_flag = false;
+static uint8_t led_counter = 0;
+static uint16_t usb_audio_buf_counter = 0;
 
-uint8_t led_counter = 0;
 
 bool get_a2dp_connected_flag(){
     return a2dp_is_connected_flag;    
 }
 
-bool bt_audio_steam_ready(void){
+bool get_bt_audio_steam_ready(void){
     return bt_steam_ready;
 }
 
@@ -347,9 +340,8 @@ void set_shared_audio_buffer(int16_t *data) {
     shared_audio_ptr = data;
 }
 
-uint16_t usb_audio_buf_counter = 0;
 
-void push_usb_buf_counter(uint16_t counter){
+void set_usb_buf_counter(uint16_t counter){
     usb_audio_buf_counter = counter;
 }
 
@@ -362,15 +354,14 @@ static int a2dp_demo_fill_sbc_audio_buffer(a2dp_media_sending_context_t * contex
     while (context->samples_ready >= num_audio_samples_per_sbc_buffer &&
      (context->max_media_payload_size - context->sbc_storage_count) >= btstack_sbc_encoder_sbc_buffer_length()){
 
-
         // Check if usb_audio_buf_counter is in the range of shared_audio_counter and shared_audio_counter + num_audio_samples_per_sbc_buffer * 2
         if (shared_audio_counter < usb_audio_buf_counter && usb_audio_buf_counter < (shared_audio_counter + num_audio_samples_per_sbc_buffer * 2)){
             // If so, wait until more data is written
-            sleep_ms(1);
+            bt_usb_resync_counter();
             break;
         }
-
-        //printf("current usb buf is %d, sbc buf is %d\n", usb_audio_buf_counter, shared_audio_counter);
+        
+        //printf("Current usb buf is %d, sbc buf is %d\n", usb_audio_buf_counter, shared_audio_counter);
 
         btstack_sbc_encoder_process_data(&shared_audio_ptr[shared_audio_counter]);
 
@@ -378,7 +369,6 @@ static int a2dp_demo_fill_sbc_audio_buffer(a2dp_media_sending_context_t * contex
         uint8_t * sbc_frame = btstack_sbc_encoder_sbc_buffer();
 
         bt_steam_ready = 1;
-            
         total_num_bytes_read += num_audio_samples_per_sbc_buffer;
 
         // first byte in sbc storage contains sbc media header
@@ -401,19 +391,9 @@ static void a2dp_demo_audio_timeout_handler(btstack_timer_source_t * timer){
     a2dp_media_sending_context_t * context = (a2dp_media_sending_context_t *) btstack_run_loop_get_timer_context(timer);
     btstack_run_loop_set_timer(&context->audio_timer, AUDIO_TIMEOUT_MS); 
     btstack_run_loop_add_timer(&context->audio_timer);
-    uint32_t now = btstack_run_loop_get_time_ms();
-
-    led_counter++;
-
-    if(led_counter == 50){
-        //cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
-    }
-    if(led_counter == 100){
-    //cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
-        led_counter = 0;
-    }
-    
+    uint32_t now = btstack_run_loop_get_time_ms();    
     uint32_t update_period_ms = AUDIO_TIMEOUT_MS;
+
     if (context->time_audio_data_sent > 0){
         update_period_ms = now - context->time_audio_data_sent;
     } 
@@ -450,6 +430,7 @@ static void a2dp_demo_timer_start(a2dp_media_sending_context_t * context){
     btstack_run_loop_set_timer_context(&context->audio_timer, context);
     btstack_run_loop_set_timer(&context->audio_timer, AUDIO_TIMEOUT_MS); 
     btstack_run_loop_add_timer(&context->audio_timer);
+    set_led_mode_playing();
 }
 
 static void a2dp_demo_timer_stop(a2dp_media_sending_context_t * context){
@@ -460,6 +441,7 @@ static void a2dp_demo_timer_stop(a2dp_media_sending_context_t * context){
     context->sbc_storage_count = 0;
     context->sbc_ready_to_send = 0;
     btstack_run_loop_remove_timer(&context->audio_timer);
+    set_led_mode_off();
 } 
 
 static void dump_sbc_configuration(media_codec_configuration_sbc_t * configuration){
@@ -477,6 +459,7 @@ static void a2dp_source_demo_start_scanning(void){
     printf("Start scanning...\n");
     gap_inquiry_start(A2DP_SOURCE_DEMO_INQUIRY_DURATION_1280MS);
     scan_active = true;
+    set_led_mode_pairing();
 }
 
 
@@ -520,7 +503,9 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
     switch (hci_event_packet_get_type(packet)){
         case  BTSTACK_EVENT_STATE:
             if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) return;
-            a2dp_source_demo_start_scanning();
+            if ( strcmp(device_addr_string , "00:00:00:00:00:00") == 0 ){
+                a2dp_source_demo_start_scanning();
+            }
             break;
 
         case HCI_EVENT_PIN_CODE_REQUEST:
@@ -547,10 +532,7 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             printf("\n");
             if ((cod & bluetooth_speaker_cod) == bluetooth_speaker_cod){
                 memcpy(device_addr, address, 6);
-                printf("Bluetooth speaker detected, trying to connect to %s...\n", bd_addr_to_str(device_addr));
-
-                //gap_store_link_key_for_bd_addr(device_addr, NULL, COMBINATION_KEY);
-                
+                printf("Bluetooth speaker detected, trying to connect to %s...\n", bd_addr_to_str(device_addr));                
                 scan_active = false;
                 gap_inquiry_stop();
                 a2dp_source_establish_stream(device_addr, &media_tracker.a2dp_cid);
@@ -707,7 +689,7 @@ static void a2dp_source_packet_handler(uint8_t packet_type, uint16_t channel, ui
 
             play_info.status = AVRCP_PLAYBACK_STATUS_PLAYING;
             if (media_tracker.avrcp_cid){
-                avrcp_target_set_now_playing_info(media_tracker.avrcp_cid, &tracks[data_source], sizeof(tracks)/sizeof(avrcp_track_t));
+                avrcp_target_set_now_playing_info(media_tracker.avrcp_cid, &tracks[0], sizeof(tracks)/sizeof(avrcp_track_t));
                 avrcp_target_set_playback_status(media_tracker.avrcp_cid, AVRCP_PLAYBACK_STATUS_PLAYING);
             }
             a2dp_is_connected_flag = true;
@@ -916,8 +898,8 @@ static void show_usage(void){
 }
 
 void a2dp_source_reconnect(){
-    a2dp_source_establish_stream(device_addr, &media_tracker.a2dp_cid);
     avrcp_connect(device_addr, &media_tracker.avrcp_cid);
+    a2dp_source_establish_stream(device_addr, &media_tracker.a2dp_cid);
     printf(" Create A2DP Source connection to addr %s, cid 0x%02x.\n", bd_addr_to_str(device_addr), media_tracker.a2dp_cid);
 }
 
@@ -983,16 +965,15 @@ static void stdin_process(char cmd){
         
         case 'x':
             if (media_tracker.avrcp_cid){
-                avrcp_target_set_now_playing_info(media_tracker.avrcp_cid, &tracks[data_source], sizeof(tracks)/sizeof(avrcp_track_t));
+                avrcp_target_set_now_playing_info(media_tracker.avrcp_cid, &tracks[0], sizeof(tracks)/sizeof(avrcp_track_t));
             }
             printf("%c - Play sine.\n", cmd);
-            data_source = STREAM_SINE;
             if (!media_tracker.stream_opened) break;
             status = a2dp_source_start_stream(media_tracker.a2dp_cid, media_tracker.local_seid);
             break;
         case 'z':
             if (media_tracker.avrcp_cid){
-                avrcp_target_set_now_playing_info(media_tracker.avrcp_cid, &tracks[data_source], sizeof(tracks)/sizeof(avrcp_track_t));
+                avrcp_target_set_now_playing_info(media_tracker.avrcp_cid, &tracks[0], sizeof(tracks)/sizeof(avrcp_track_t));
             }
             printf("%c - get first link key.\n", cmd);
             get_first_link_key();
@@ -1044,7 +1025,6 @@ static void stdin_process(char cmd){
 }
 
 
-
 void bt_disconnect_and_scan(){
     a2dp_demo_timer_stop(&media_tracker);
     a2dp_source_disconnect(media_tracker.a2dp_cid);
@@ -1053,7 +1033,6 @@ void bt_disconnect_and_scan(){
     led_counter = 0;
     gap_delete_all_link_keys();
     a2dp_source_demo_start_scanning();
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 }
 
 

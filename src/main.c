@@ -1,7 +1,6 @@
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "btstack_run_loop.h"
-#include "usb_sound.h"
 #include "btstack/bt_audio.h"
 #include <stdio.h>
 #include "pico/multicore.h"
@@ -13,8 +12,11 @@
 #include "hardware/structs/ioqspi.h"
 #include "hardware/structs/sio.h"
 
-// wasdwasd0105
+#include "usb_sound.h"
+#include "pico_w_led.h"
+#include "pico/flash.h"
 
+// by wasdwasd0105
 
 bool __no_inline_not_in_flash_func(get_bootsel_button)() {
     const uint CS_PIN_INDEX = 1;
@@ -68,7 +70,7 @@ void check_bootsel_state(){
             }else{
                 bt_usb_resync_counter();
             }
-                        
+
         }
         bootsel_state_counter = 0;
     }
@@ -97,13 +99,11 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
 int main() {
 
-    // // enable to use uart see debug info
+    // enable to use uart see debug info
     // stdio_init_all();
     // stdout_uart_init();
 
     multicore_launch_core1(usb_audio_main());
-
-    //usb_audio_main();
 
     printf("init ctw43.\n");
 
@@ -113,20 +113,18 @@ int main() {
         return -1;
     }
 
+    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+    
     // inform about BTstack state
     hci_event_callback_registration.callback = &packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
 
     btstack_main(0, NULL);
-    cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
-
-    //btstack_run_loop_execute();
 
     while (1) {
         //printf("get_bootsel_button is %d\n", get_bootsel_button());
         check_bootsel_state();
-
         sleep_ms(20);
-        }
+    }
 
 }

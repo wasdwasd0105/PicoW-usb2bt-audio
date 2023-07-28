@@ -13,6 +13,9 @@
 
 #include "btstack/bt_audio.h"
 
+#include "pico/flash.h"
+
+
 
 // todo forget why this is using core 1 for sound: presumably not necessary
 // todo noop when muted
@@ -288,7 +291,7 @@ void _as_audio_packet(struct usb_endpoint *ep) {
         buffer_counter++; 
         
     }
-    push_usb_buf_counter(buffer_counter);
+    set_usb_buf_counter(buffer_counter);
     free(out);
     usb_grow_transfer(ep->current_transfer, 1);
     usb_packet_done(ep);
@@ -596,6 +599,7 @@ void usb_sound_card_init() {
 
 void * usb_audio_main(void) {
 
+    flash_safe_execute_core_init();
 
     usb_sound_card_init();
 
