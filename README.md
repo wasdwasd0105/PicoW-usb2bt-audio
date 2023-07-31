@@ -44,23 +44,19 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
 2. **Set the audio output on your source device:** On your audio source device, go to your sound settings and change the audio output device to `USB Bluetooth Audio`. 
 
-3. **Pair with a Bluetooth audio device:** Put your Bluetooth speakers or headphones into pairing mode. The adapter will automatically connect to the Bluetooth device when it's in pairing mode.
+3. **Pairing a new device:** To pair a new device, long press the 'BOOTSEL' button on the Pico W and release it the led light will blink fast. Then, put the new Bluetooth device into pairing mode. The Pico W will automatically connect to it.
 
 4. **Start playing audio:** Once everything is set up, you can start playing audio from your source device. The audio will be streamed to your Bluetooth device via the Pico W.
 
-5. **Resolving noise issues:** The audio stream may have noise when the connection is out of sync. If this happens, you can resync the connection by short pressing the 'BOOTSEL' button on the Pico W several times until the sound becomes clear.
-
-6. **Pairing a new device:** To pair a new device, long press the 'BOOTSEL' button on the Pico W and release it. Then, put the new Bluetooth device into pairing mode. The Pico W will automatically connect to it.
-
-7. **Reconnecting a device:** You can reconnect the headphone by short pressing the 'BOOTSEL' button.
+5. **Reconnecting a device:** You can reconnect the headphone by short pressing the 'BOOTSEL' button.
 
 
 
 ## Green LED light Status Indicator
 
-1. **Blinking:** When the Green LED light is blinking, it indicates that audio is currently streaming.
-
-2. **On (Steady Light):** When the Green LED light is on, it means that the PicoW Adapter is in pairing mode, ready to connect with a Bluetooth audio device.
+1. **Blinking Slow (1s):** When the Green LED light is blinking, it indicates that audio is currently streaming.
+2. **Blinking Fast (0.5s):** It means that the PicoW Adapter is in pairing mode.
+3. **On (Steady Light):** It means that the PicoW Adapter is on standby. Short-press the key to reconnect the last saved device.
 
 
 ## Compile & Debug
