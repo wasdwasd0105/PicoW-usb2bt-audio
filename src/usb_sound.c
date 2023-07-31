@@ -279,6 +279,14 @@ void _as_audio_packet(struct usb_endpoint *ep) {
     }
     //printf("usb 1ms ~~~~~~~~~~\n");
 
+    // New resync func
+    // Check if usb_audio_buf_counter is in the range of shared_audio_counter and shared_audio_counter + num_audio_samples_per_sbc_buffer * 2
+    // 128 is a not good value; need get from btstack_sbc_encoder_sbc_buffer_length()
+    if (get_bt_buf_counter() < buffer_counter && buffer_counter < (get_bt_buf_counter() + 128 * 2)){
+            // If so, wait until more data is written
+        buffer_counter += sample_count;
+    }
+
     for (int i = 0; i < sample_count * 2; i++) {
 
         if (buffer_counter < AUDIO_BUF_POOL_LEN){

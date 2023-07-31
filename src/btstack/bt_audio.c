@@ -340,6 +340,10 @@ void set_shared_audio_buffer(int16_t *data) {
     shared_audio_ptr = data;
 }
 
+int get_bt_buf_counter(void) {
+    return shared_audio_counter;
+}
+
 
 void set_usb_buf_counter(uint16_t counter){
     usb_audio_buf_counter = counter;
@@ -354,13 +358,13 @@ static int a2dp_demo_fill_sbc_audio_buffer(a2dp_media_sending_context_t * contex
     while (context->samples_ready >= num_audio_samples_per_sbc_buffer &&
      (context->max_media_payload_size - context->sbc_storage_count) >= btstack_sbc_encoder_sbc_buffer_length()){
 
-        // Check if usb_audio_buf_counter is in the range of shared_audio_counter and shared_audio_counter + num_audio_samples_per_sbc_buffer * 2
-        if (shared_audio_counter < usb_audio_buf_counter && usb_audio_buf_counter < (shared_audio_counter + num_audio_samples_per_sbc_buffer * 2)){
-            // If so, wait until more data is written
-            bt_usb_resync_counter();
-            break;
-        }
-        
+        // depreciate because it will cause tws headphones be hard to play. New resync funcs is on usb audio.
+        // // Check if usb_audio_buf_counter is in the range of shared_audio_counter and shared_audio_counter + num_audio_samples_per_sbc_buffer * 2
+        // if (start_adjust && shared_audio_counter < usb_audio_buf_counter && usb_audio_buf_counter < (shared_audio_counter + num_audio_samples_per_sbc_buffer * 2)){
+        //     // If so, wait until more data is written
+        //     bt_usb_resync_counter();
+        //     break;
+        // }
         //printf("Current usb buf is %d, sbc buf is %d\n", usb_audio_buf_counter, shared_audio_counter);
 
         btstack_sbc_encoder_process_data(&shared_audio_ptr[shared_audio_counter]);
@@ -680,6 +684,7 @@ static void a2dp_source_packet_handler(uint8_t packet_type, uint16_t channel, ui
             }
 
             printf("A2DP Source: Stream reconfigured a2dp_cid 0x%02x, local_seid 0x%02x\n", cid, local_seid);
+            sleep_ms(200);
             status = a2dp_source_start_stream(media_tracker.a2dp_cid, media_tracker.local_seid);
             break;
 
@@ -899,6 +904,7 @@ static void show_usage(void){
 
 void a2dp_source_reconnect(){
     avrcp_connect(device_addr, &media_tracker.avrcp_cid);
+    sleep_ms(500);
     a2dp_source_establish_stream(device_addr, &media_tracker.a2dp_cid);
     printf(" Create A2DP Source connection to addr %s, cid 0x%02x.\n", bd_addr_to_str(device_addr), media_tracker.a2dp_cid);
 }

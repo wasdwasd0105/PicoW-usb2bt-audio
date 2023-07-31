@@ -68,7 +68,8 @@ void check_bootsel_state(){
             if (get_a2dp_connected_flag() == false){
                 a2dp_source_reconnect();
             }else{
-                bt_usb_resync_counter();
+                // no longer need to resync bt
+                //bt_usb_resync_counter();
             }
 
         }
@@ -99,7 +100,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
 int main() {
 
-    // enable to use uart see debug info
+    // // enable to use uart see debug info
     // stdio_init_all();
     // stdout_uart_init();
 

@@ -23,4 +23,6 @@ static void get_first_link_key();
 
 void set_usb_buf_counter(uint16_t counter);
 
+int get_bt_buf_counter();
+
 static bool bt_audio_ready;
