@@ -1,7 +1,7 @@
 # Copyright (c) 2022 Mr. Green's Workshop https://www.MrGreensWorkshop.com
 # SPDX-License-Identifier: Apache-2.0
 
-set(PICO_SDK_PATH "/Users/wasdwasd0105/pico/pico-sdk")
+set(PICO_SDK_PATH $ENV{PICO_SDK_PATH})
 
 
 # Set minimum CMake version
