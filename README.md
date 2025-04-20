@@ -12,7 +12,7 @@ To make sure we can keep working on free and open-source projects like this,
 </p>
 
 ### Driver-Free Setup
-Setting up PicoW requires no driver or software installation. Simply plug the Pico W into your device's USB port, set your Bluetooth headphones or speakers to pairing mode, and an automatic connection will be made. 
+Setting up Pico W/2 W requires no driver or software installation. Simply plug the Pico W into your device's USB port, set your Bluetooth headphones or speakers to pairing mode, and an automatic connection will be made. 
 
 ### Bluetooth SBC Codec
 Pico W Bluetooth Adapter utilizes the sbc codec to deliver high-quality audio. It can steam with stereo sound. 
@@ -26,7 +26,7 @@ Pico W Bluetooth Adapter utilizes the sbc codec to deliver high-quality audio. I
 
 Installing the Pico W USB Audio to Bluetooth Adapter firmware involves flashing a UF2 (USB Flashing Format) file onto your Raspberry Pi Pico. Follow these steps:
 
-1. **Download the UF2 file:** You can find the latest firmware for the PicoW USB Audio to Bluetooth Adapter at the [releases page](https://github.com/wasdwasd0105/PicoW-usb2bt-audio/releases) of the GitHub repository. Download the `.uf2` file from the latest release.
+1. **Download the UF2 file:** You can find the latest firmware for the PicoW USB Audio to Bluetooth Adapter at the [releases page](https://github.com/wasdwasd0105/PicoW-usb2bt-audio/releases) of the GitHub repository. Download the `.uf2` file from the latest release. 
 
 2. **Connect the Pico to your computer:** First, ensure that your Pico is not connected to your computer. Then, hold down the 'BOOTSEL' button on the Pico while you plug it into your computer using a micro USB cable. It will appear on your computer as a mass storage device (like a USB flash drive).
 
@@ -63,30 +63,25 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
 In order to compile the PicoW USB Audio to Bluetooth Adapter firmware from source code, you need to follow these steps:
 
-1. **Prepare your environment:** Make sure that you have a working development environment for Raspberry Pi Pico projects. This includes having the required compiler and tools installed. You may refer to the [Getting started with Raspberry Pi Pico](https://www.raspberrypi.org/documentation/rp2040/getting-started/) guide for detailed instructions.
+1. **Prepare your environment:** Use VS Code and Raspberry Pi Pico extension
 
-2. **Set environment variables:** Before you can build the project, you need to set two environment variables: `PICO_SDK_PATH` and `PICO_EXTRAS_PATH`. For example:
-
-```bash
-export PICO_SDK_PATH=~/pico-sdk
-export PICO_EXTRAS_PATH=~/pico-extras
-```
-
-3. **Build the project:** After setting up your environment, navigate to the project directory in a terminal and run the provided build script:
+2. **Set environment variables:** Download pico-extras from https://github.com/raspberrypi/pico-extras and set the path to CMakeLists.txt
 
 ```bash
-./build.sh
+# put your pico-extras path here: https://github.com/raspberrypi/pico-extras
+set(PICO_EXTRAS_PATH ~/pico-extras)
 ```
 
-This script should compile the project and produce a UF2 firmware file that you can flash onto your Pico W.
+3. **Import the project on the Raspberry Pi Pico extension:** Import the project using General -> Import Project
+
+Choose Pico W or Pico 2 W using Switch Board
+
+Then you can Debug, Compile and Run the project on the Project tab
 
 4. **Debug Serial input/output:** You can use uart to see the debug info. Connect the GPIO 0 and 1 as TX and RX. To enable BTstack's serial input, you can uncomment `HAVE_BTSTACK_STDIN` under btstack_config.h
     
 
 ## Acknowledgments
-
-This project wouldn't have been possible without the foundational work provided by the following projects:
-
 1. [usb-sound-card](https://github.com/raspberrypi/pico-playground/tree/master/apps/usb_sound_card): It served as a valuable reference for handling USB audio data with the Raspberry Pi Pico.
 
 2. [a2dp_source_demo](https://github.com/bluekitchen/btstack/blob/master/example/a2dp_source_demo.c): The Advanced Audio Distribution Profile (A2DP) source demo provided by the BTstack.

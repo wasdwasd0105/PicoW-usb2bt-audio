@@ -5,7 +5,7 @@
 
 // BTstack features that can be enabled
 #ifdef ENABLE_BLE
-//#define ENABLE_LE_PERIPHERAL
+#define ENABLE_LE_PERIPHERAL
 #define ENABLE_LE_CENTRAL
 //#define ENABLE_L2CAP_LE_CREDIT_BASED_FLOW_CONTROL_MODE
 #endif
