@@ -11,12 +11,14 @@
 #include "hardware/sync.h"
 #include "hardware/structs/ioqspi.h"
 #include "hardware/structs/sio.h"
+#include "hardware/clocks.h"
+#include "hardware/vreg.h"
+#include "hardware/timer.h"
 
-#include "usb_sound.h"
 #include "pico_w_led.h"
 #include "pico/flash.h"
+#include "tinyusb/uac.h"
 
-// by wasdwasd0105
 
 bool __no_inline_not_in_flash_func(get_bootsel_button)() {
     const uint CS_PIN_INDEX = 1;
@@ -35,7 +37,12 @@ bool __no_inline_not_in_flash_func(get_bootsel_button)() {
 
     // The HI GPIO registers in SIO can observe and control the 6 QSPI pins.
     // Note the button pulls the pin *low* when pressed.
-    bool button_state = !(sio_hw->gpio_hi_in & (1u << CS_PIN_INDEX));
+#if PICO_RP2040
+    #define CS_BIT (1u << 1)
+#else
+    #define CS_BIT SIO_GPIO_HI_IN_QSPI_CSN_BITS
+#endif
+    bool button_state = !(sio_hw->gpio_hi_in & CS_BIT);
 
     // Need to restore the state of chip select, else we are going to have a
     // bad time when we return to code in flash!
@@ -47,6 +54,9 @@ bool __no_inline_not_in_flash_func(get_bootsel_button)() {
 
     return button_state;
 }
+
+
+// by wasdwasd0105
 
 int bootsel_state_counter = 0;
 
@@ -98,13 +108,25 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 }
 
 
+bool usb_timer_callback(repeating_timer_t *rt){
+    tinyusb_task();
+    return true;
+}
+
+
 int main() {
 
-    // // enable to use uart see debug info
-    // stdio_init_all();
-    // stdout_uart_init();
+    // vreg_set_voltage(VREG_VOLTAGE_1_20);
+    // sleep_ms(100);
+    // set_sys_clock_khz(250000, true);
 
-    multicore_launch_core1(usb_audio_main());
+    // // enable to use uart see debug info
+    stdio_init_all();
+    stdout_uart_init();
+
+    flash_safe_execute_core_init();
+
+    tinyusb_main();
 
     printf("init ctw43.\n");
 
@@ -115,12 +137,18 @@ int main() {
     }
 
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
-    
+
+
     // inform about BTstack state
     hci_event_callback_registration.callback = &packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
 
     btstack_main(0, NULL);
+    sleep_ms(200);  
+    //bt_disconnect_and_scan();
+    
+    static repeating_timer_t usb_timer;
+    add_repeating_timer_us(-25, usb_timer_callback, NULL, &usb_timer);
 
     while (1) {
         //printf("get_bootsel_button is %d\n", get_bootsel_button());
