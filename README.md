@@ -65,24 +65,17 @@ In order to compile the PicoW USB Audio to Bluetooth Adapter firmware from sourc
 
 1. **Prepare your environment:** Use VS Code and Raspberry Pi Pico extension
 
-2. **Set environment variables:** Download pico-extras from https://github.com/raspberrypi/pico-extras and set the path to CMakeLists.txt
-
-```bash
-# put your pico-extras path here: https://github.com/raspberrypi/pico-extras
-set(PICO_EXTRAS_PATH ~/pico-extras)
-```
-
-3. **Import the project on the Raspberry Pi Pico extension:** Import the project using General -> Import Project
+2. **Import the project on the Raspberry Pi Pico extension:** Import the project using General -> Import Project
 
 Choose Pico W or Pico 2 W using Switch Board
 
 Then you can Debug, Compile and Run the project on the Project tab
 
-4. **Debug Serial input/output:** You can use uart to see the debug info. Connect the GPIO 0 and 1 as TX and RX. To enable BTstack's serial input, you can uncomment `HAVE_BTSTACK_STDIN` under btstack_config.h
+3. **Debug Serial input/output:** You can use uart to see the debug info. Connect the GPIO 0 and 1 as TX and RX. To enable BTstack's serial input, you can uncomment `HAVE_BTSTACK_STDIN` under btstack_config.h
     
 
 ## Acknowledgments
-1. [usb-sound-card](https://github.com/raspberrypi/pico-playground/tree/master/apps/usb_sound_card): It served as a valuable reference for handling USB audio data with the Raspberry Pi Pico.
+1. [usb-sound-card](https://github.com/hathach/tinyusb/tree/master/examples/device/uac2_headset): Tinyusb uac2 demo.
 
 2. [a2dp_source_demo](https://github.com/bluekitchen/btstack/blob/master/example/a2dp_source_demo.c): The Advanced Audio Distribution Profile (A2DP) source demo provided by the BTstack.
 
