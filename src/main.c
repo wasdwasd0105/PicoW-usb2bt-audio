@@ -1,7 +1,10 @@
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "btstack_run_loop.h"
-#include "btstack/bt_audio.h"
+
+#include "btstack/btstack_avdtp_source.h"
+#include "btstack/btstack_hci.h"
+
 #include <stdio.h>
 #include "pico/multicore.h"
 
@@ -15,9 +18,9 @@
 #include "hardware/vreg.h"
 #include "hardware/timer.h"
 
+#include "tinyusb/uac.h"
 #include "pico_w_led.h"
 #include "pico/flash.h"
-#include "tinyusb/uac.h"
 
 
 bool __no_inline_not_in_flash_func(get_bootsel_button)() {
@@ -70,7 +73,7 @@ void check_bootsel_state(){
 
         if(bootsel_state_counter > 50){
             printf("key prassed long!\n");
-            bt_disconnect_and_scan();
+            avdtp_disconnect_and_scan();
         }
 
         else if (bootsel_state_counter > 5){
@@ -78,8 +81,7 @@ void check_bootsel_state(){
             if (get_a2dp_connected_flag() == false){
                 a2dp_source_reconnect();
             }else{
-                // no longer need to resync bt
-                //bt_usb_resync_counter();
+                set_next_capablity_and_start_stream();
             }
 
         }
@@ -116,9 +118,9 @@ bool usb_timer_callback(repeating_timer_t *rt){
 
 int main() {
 
-    // vreg_set_voltage(VREG_VOLTAGE_1_20);
-    // sleep_ms(100);
-    // set_sys_clock_khz(250000, true);
+    vreg_set_voltage(VREG_VOLTAGE_1_20);
+    sleep_ms(100);
+    set_sys_clock_khz(250000, true);
 
     // // enable to use uart see debug info
     stdio_init_all();
