@@ -1,0 +1,12 @@
+prefix=@PREFIX@
+exec_prefix=@PC_VAR_PREFIX@
+libdir=@LIBDIR@
+includedir=@INCLUDEDIR@
+
+Name: ldacBT-enc
+Description: LDAC Bluetooth encoder.
+Version: @VERSION@
+
+Libs: -L@PC_VAR_LIBDIR@ -lldacBT_enc
+Libs.private: -lm
+Cflags: -I@PC_VAR_INCLUDEDIR@

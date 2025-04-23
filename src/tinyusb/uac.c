@@ -30,7 +30,7 @@
  #include "tusb.h"
  #include "usb_descriptors.h"
 
- #include "../btstack/bt_audio.h"
+ #include "../btstack/btstack_avdtp_source.h"
  #include "pico/flash.h"
 
 

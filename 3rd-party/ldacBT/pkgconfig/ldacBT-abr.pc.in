@@ -1,0 +1,12 @@
+prefix=@PREFIX@
+exec_prefix=@PC_VAR_PREFIX@
+libdir=@LIBDIR@
+includedir=@INCLUDEDIR@
+
+Name: ldacBT-abr
+Description: LDAC Bluetooth ABR library.
+Version: @VERSION@
+
+Libs: -L@PC_VAR_LIBDIR@ -lldacBT_abr
+Libs.private: -lldacBT_enc
+Cflags: -I@PC_VAR_INCLUDEDIR@

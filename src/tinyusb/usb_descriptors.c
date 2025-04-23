@@ -149,7 +149,7 @@ char const *string_desc_arr[] =
   "TinyUSB headset",              // 2: Product
   NULL,                           // 3: Serials will use unique ID if possible
   "TinyUSB Speakers",             // 4: Audio Interface
-  "TinyUSB BT",           // 5: Audio Interface
+  "TinyUSB LDAC",                 // 5: Audio Interface
 };
 
 
