@@ -140,6 +140,7 @@ extern "C" {
 #define CFG_TUD_AUDIO_FUNC_1_FORMAT_2_RESOLUTION_RX                  16
 #endif
 
+
 // EP and buffer size - for isochronous EP´s, the buffer and EP size are equal (different sizes would not make sense)
 //#define CFG_TUD_AUDIO_ENABLE_EP_IN                0
 

@@ -81,7 +81,7 @@ void check_bootsel_state(){
             if (get_a2dp_connected_flag() == false){
                 a2dp_source_reconnect();
             }else{
-                set_next_capablity_and_start_stream();
+                //set_next_capablity_and_start_stream();
             }
 
         }
@@ -155,6 +155,7 @@ int main() {
     while (1) {
         //printf("get_bootsel_button is %d\n", get_bootsel_button());
         check_bootsel_state();
+        tinyusb_control_task();
         sleep_ms(20);
     }
 

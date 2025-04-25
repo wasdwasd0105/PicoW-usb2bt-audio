@@ -66,22 +66,6 @@
 
 #define VOLUME_REDUCTION 2
 
-#define AUDIO_TIMEOUT_MS            3
-#define TABLE_SIZE_441HZ            100
-
-static const int16_t sine_int16[] = {
-     0,    2057,    4107,    6140,    8149,   10126,   12062,   13952,   15786,   17557,
- 19260,   20886,   22431,   23886,   25247,   26509,   27666,   28714,   29648,   30466,
- 31163,   31738,   32187,   32509,   32702,   32767,   32702,   32509,   32187,   31738,
- 31163,   30466,   29648,   28714,   27666,   26509,   25247,   23886,   22431,   20886,
- 19260,   17557,   15786,   13952,   12062,   10126,    8149,    6140,    4107,    2057,
-     0,   -2057,   -4107,   -6140,   -8149,  -10126,  -12062,  -13952,  -15786,  -17557,
--19260,  -20886,  -22431,  -23886,  -25247,  -26509,  -27666,  -28714,  -29648,  -30466,
--31163,  -31738,  -32187,  -32509,  -32702,  -32767,  -32702,  -32509,  -32187,  -31738,
--31163,  -30466,  -29648,  -28714,  -27666,  -26509,  -25247,  -23886,  -22431,  -20886,
--19260,  -17557,  -15786,  -13952,  -12062,  -10126,   -8149,   -6140,   -4107,   -2057,
-};
-
 typedef struct {
     // bitmaps
     uint8_t sampling_frequency_bitmap;
@@ -127,7 +111,6 @@ typedef struct {
     uint8_t  remote_seid;
     uint16_t avrcp_cid;
 
-
     uint32_t time_audio_data_sent; // ms
     uint32_t acc_num_missed_samples;
     uint32_t samples_ready;
@@ -150,13 +133,9 @@ typedef struct {
 HANDLE_LDAC_BT handleLDAC;
 #endif
 
-
-
 static a2dp_media_sending_context_t media_tracker;
 
 static int current_sample_rate = 44100;
-
-static int sine_phase;
 
 static uint8_t sdp_avdtp_source_service_buffer[150];
 
@@ -210,7 +189,6 @@ static struct {
 avdtp_stream_endpoint_t * stream_endpoint_sbc;
 avdtp_stream_endpoint_t * stream_endpoint_ldac;
 
-
 static btstack_sbc_encoder_state_t sbc_encoder_state;
 static uint8_t is_cmd_triggered_localy = 0;
 
@@ -235,7 +213,6 @@ static uint8_t media_ldac_codec_capabilities[] = {
         0x01,
         0x1
 };
-
 
 // configurations for local stream endpoints
 static uint8_t local_stream_endpoint_sbc_media_codec_configuration[4];
@@ -373,6 +350,9 @@ void set_shared_audio_buffer(int16_t *data) {
     shared_audio_ptr = data;
 }
 
+bool check_is_streaming(){
+    return is_streaming;
+}
 
 
 static int fill_sbc_audio_buffer(a2dp_media_sending_context_t * context){
@@ -391,9 +371,6 @@ static int fill_sbc_audio_buffer(a2dp_media_sending_context_t * context){
 
         total_num_bytes_read += num_audio_samples_per_sbc_buffer;
 
-        //printf("Currect buf %d", shared_audio_counter);
-
-        // first byte in sbc storage contains sbc media header
         memcpy(&context->codec_storage[1 + context->codec_storage_count], sbc_frame, sbc_frame_size);
         context->codec_storage_count += sbc_frame_size;
         context->samples_ready -= num_audio_samples_per_sbc_buffer;
@@ -409,8 +386,6 @@ static int fill_sbc_audio_buffer(a2dp_media_sending_context_t * context){
     return total_num_bytes_read;
 }
 
-
-
 static int a2dp_demo_fill_ldac_audio_buffer(a2dp_media_sending_context_t *context) {
     int          total_samples_read                = 0;
     unsigned int num_audio_samples_per_ldac_buffer = LDACBT_ENC_LSU;//LDACBT_ENC_LSU;
@@ -424,7 +399,6 @@ static int a2dp_demo_fill_ldac_audio_buffer(a2dp_media_sending_context_t *contex
 
     while (context->samples_ready >= num_audio_samples_per_ldac_buffer && encoded == 0) {
 
-        //printf("Currect buf %d\n", shared_audio_counter);
         if (ldacBT_encode(handleLDAC, &shared_audio_ptr[shared_audio_counter], &consumed, &context->codec_storage[context->codec_storage_count], &encoded, &frames) != 0) {
             printf("LDAC encoding error: %d\n", ldacBT_get_error_code(handleLDAC));
         }
@@ -444,9 +418,8 @@ static int a2dp_demo_fill_ldac_audio_buffer(a2dp_media_sending_context_t *contex
 }
 
 
-static void * avdtp_audio_timeout_handler2(btstack_timer_source_t * timer){
-    //printf("sending data\n");
-    //printf("time out called!\n");
+static void avdtp_audio_timeout_handler(btstack_timer_source_t * timer){
+
 
     adtvp_media_codec_capabilities_t local_cap;
     a2dp_media_sending_context_t * context = (a2dp_media_sending_context_t *) btstack_run_loop_get_timer_context(timer);
@@ -476,8 +449,7 @@ static void * avdtp_audio_timeout_handler2(btstack_timer_source_t * timer){
     //printf("num_samples is %d\n", num_samples);
     //printf("samples_ready is %d\n", context->samples_ready);
 
-
-    if (context->codec_ready_to_send) return 0;
+    if (context->codec_ready_to_send) return;
 
     avdtp_media_codec_type_t codec_type = sc.local_stream_endpoint->remote_configuration.media_codec.media_codec_type;
 
@@ -502,9 +474,8 @@ static void * avdtp_audio_timeout_handler2(btstack_timer_source_t * timer){
 
             // LDAC
             if (local_vendor_id == A2DP_CODEC_VENDOR_ID_SONY && local_codec_id == A2DP_SONY_CODEC_LDAC) {
-                
                 if (context->codec_ready_to_send)
-                    return 0;
+                    return;
                 a2dp_demo_fill_ldac_audio_buffer(context);
 
                 if (context->codec_storage_count > 1) {
@@ -514,21 +485,13 @@ static void * avdtp_audio_timeout_handler2(btstack_timer_source_t * timer){
                 }
             }
             break;
-
         default:
             break;
     }
 }
 
-static void avdtp_audio_timeout_handler(btstack_timer_source_t * timer){
-    avdtp_audio_timeout_handler2(timer);
-   //multicore_reset_core1();
-   //multicore_launch_core1(avdtp_audio_timeout_handler2(timer));
-}
 
 static void a2dp_demo_timer_start(a2dp_media_sending_context_t * context){
-    //context->max_media_payload_size = 0x290;// avdtp_max_media_payload_size(context->local_seid);
-    //context->max_media_payload_size = btstack_min(a2dp_max_media_payload_size(context->a2dp_cid, context->local_seid), SBC_STORAGE_SIZE);
 
     context->max_media_payload_size = 0x290;
     context->codec_storage_count = 0;
@@ -552,6 +515,13 @@ static void a2dp_demo_timer_stop(a2dp_media_sending_context_t * context){
 } 
 
 static void a2dp_demo_timer_pause(a2dp_media_sending_context_t * context){
+    is_streaming = false;
+    context->time_audio_data_sent = 0;
+    context->acc_num_missed_samples = 0;
+    context->samples_ready = 0;
+    context->streaming = 1;
+    context->codec_storage_count = 0;
+    context->codec_ready_to_send = 0;
     btstack_run_loop_remove_timer(&context->audio_timer);
 } 
 
@@ -890,15 +860,15 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
                 // init ldac encoder
                 int mtu = 679; // minimal required mtu
-                if (ldacBT_init_handle_encode(handleLDAC, mtu, LDACBT_EQMID_MQ, ldac_configuration.channel_mode,
+                if (ldacBT_init_handle_encode(handleLDAC, mtu, LDACBT_EQMID_SQ, ldac_configuration.channel_mode,
                             LDACBT_SMPL_FMT_S16, ldac_configuration.sampling_frequency) == -1) {
                     printf("Couldn't initialize LDAC encoder: %d\n", ldacBT_get_error_code(handleLDAC));
                     break;
                 }
-                // HQ 990kbps -> audio_timer_interval = 1 
-                // SQ 660kbps -> audio_timer_interval <= 5
-                // MQ 330kbps -> audio_timer_interval <= 10
-                audio_timer_interval = 1;
+                // HQ 909kbps -> audio_timer_interval = 1 
+                // SQ 606kbps -> audio_timer_interval <= 5
+                // MQ 303kbps -> audio_timer_interval <= 10
+                audio_timer_interval = 2;
                 current_sample_rate = ldac_configuration.sampling_frequency;
                 printf("current LDAC sampling rate is %d \n", current_sample_rate);
 
@@ -1000,6 +970,13 @@ static void show_usage(void){
     printf("u      - set up sbc           for remote seid %u\n", media_tracker.remote_seid);
     printf("Ctrl-c - exit\n");
     printf("---\n");
+}
+
+
+void set_bt_volume(int16_t val){
+    media_tracker.volume = (val*2 + 100) * 127 / 100;
+    avrcp_controller_set_absolute_volume(media_tracker.avrcp_cid, media_tracker.volume);
+    //printf("(via set usb volume) %d%% (%d)\n",  media_tracker.volume * 100 / 127,  media_tracker.volume);
 }
 
 static void stdin_process(char cmd){
@@ -1138,7 +1115,7 @@ static void stdin_process(char cmd){
             status = set_ldac_configuration();
             break;
 
-            case 'v':
+        case 'v':
             if (media_tracker.volume > 117){
                 media_tracker.volume = 127;
             } else {
@@ -1156,7 +1133,6 @@ static void stdin_process(char cmd){
             printf(" - volume down (via set absolute volume) %d%% (%d)\n",  media_tracker.volume * 100 / 127,  media_tracker.volume);
             status = avrcp_controller_set_absolute_volume(media_tracker.avrcp_cid, media_tracker.volume);
             break;
-
 
         case 'p':
             a2dp_demo_send_media_packet();
@@ -1389,7 +1365,12 @@ void start_led_blink(){
 
 }
 
+static bool _bt_sink_volume_changed = false;
 
+// getter returns a pointer to that storage
+bool * get_is_bt_sink_volume_changed_ptr(void){
+    return &_bt_sink_volume_changed;
+}
 
 static void avrcp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
@@ -1438,6 +1419,14 @@ static void avrcp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
     }
 }
 
+
+bool is_muted = false;
+
+bool get_bt_mute(){
+    return is_muted;
+}
+
+
 static void avrcp_target_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
     UNUSED(size);
@@ -1469,10 +1458,16 @@ static void avrcp_target_packet_handler(uint8_t packet_type, uint16_t channel, u
             }
             switch (operation_id) {
                 case AVRCP_OPERATION_ID_PLAY:
-                    status = avdtp_source_start_stream(media_tracker.avdtp_cid, media_tracker.local_seid);
+                    is_muted = false;
+                    _bt_sink_volume_changed = true;
+                    avrcp_controller_set_absolute_volume(media_tracker.avrcp_cid, media_tracker.volume);
+                    //a2dp_demo_timer_start(&media_tracker);
                     break;
                 case AVRCP_OPERATION_ID_PAUSE:
-                    status = avdtp_source_suspend(media_tracker.avdtp_cid, media_tracker.local_seid);
+                    //a2dp_demo_timer_pause(&media_tracker);
+                    _bt_sink_volume_changed = true;
+                    is_muted = true;
+                    avrcp_controller_set_absolute_volume(media_tracker.avrcp_cid, 0);
                     break;
                 case AVRCP_OPERATION_ID_STOP:
                     status = avdtp_source_stop_stream(media_tracker.avdtp_cid, media_tracker.local_seid);
@@ -1490,6 +1485,10 @@ static void avrcp_target_packet_handler(uint8_t packet_type, uint16_t channel, u
     }
 }
 
+uint8_t get_bt_volume(){
+    return media_tracker.volume;
+}
+
 static void avrcp_controller_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
     UNUSED(size);
@@ -1501,7 +1500,10 @@ static void avrcp_controller_packet_handler(uint8_t packet_type, uint16_t channe
     switch (packet[2]){
         case AVRCP_SUBEVENT_NOTIFICATION_VOLUME_CHANGED:
             media_tracker.volume = avrcp_subevent_notification_volume_changed_get_absolute_volume(packet);
-            printf("AVRCP Controller: Notification Absolute Volume %d %%\n", media_tracker.volume * 100 / 127);
+            
+            _bt_sink_volume_changed = true;
+            printf("AVRCP Controller: Notification Absolute Volume %d %%\n", media_tracker.volume * 100 / 127);\
+
             break;
         case AVRCP_SUBEVENT_NOTIFICATION_EVENT_BATT_STATUS_CHANGED:
             // see avrcp_battery_status_t

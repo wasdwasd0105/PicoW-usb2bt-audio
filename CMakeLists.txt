@@ -23,7 +23,7 @@ if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 # ====================================================================================
-set(PICO_BOARD pico_w CACHE STRING "Board type")
+set(PICO_BOARD pico2_w CACHE STRING "Board type")
 set(FAMILY rp2040)
 set(BOARD pico_sdk)
 
@@ -92,7 +92,7 @@ target_compile_definitions(PicoW_USB_BT_Audio PRIVATE
 )
 
 # must enable on rp2040 & 330kbps(MQ)
-set(LDAC_SOFT_FLOAT_DEFINE "-D_32BIT_FIXED_POINT")
+#set(LDAC_SOFT_FLOAT_DEFINE "-D_32BIT_FIXED_POINT")
 
 # Export binaries like hex, bin, and uf2 files.
 pico_add_extra_outputs(${PROJECT_NAME})

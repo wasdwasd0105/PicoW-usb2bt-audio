@@ -13,6 +13,16 @@ void set_usb_buf_counter(uint16_t counter);
 
 void set_shared_audio_buffer(int16_t *data);
 
+bool check_is_streaming();
+
+void set_bt_volume(int16_t);
+
+uint8_t get_bt_volume();
+
+bool get_bt_mute();
+
+bool * get_is_bt_sink_volume_changed_ptr();
+
 int btstack_main(int argc, const char * argv[]);
 
 void avdtp_disconnect_and_scan(void);
