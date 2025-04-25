@@ -15,9 +15,9 @@
 #include "hardware/vreg.h"
 #include "hardware/timer.h"
 
+#include "tinyusb/uac.h"
 #include "pico_w_led.h"
 #include "pico/flash.h"
-#include "tinyusb/uac.h"
 
 
 bool __no_inline_not_in_flash_func(get_bootsel_button)() {
@@ -78,8 +78,6 @@ void check_bootsel_state(){
             if (get_a2dp_connected_flag() == false){
                 a2dp_source_reconnect();
             }else{
-                // no longer need to resync bt
-                //bt_usb_resync_counter();
             }
 
         }
@@ -153,6 +151,7 @@ int main() {
     while (1) {
         //printf("get_bootsel_button is %d\n", get_bootsel_button());
         check_bootsel_state();
+        tinyusb_control_task();
         sleep_ms(20);
     }
 

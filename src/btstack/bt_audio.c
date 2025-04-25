@@ -800,6 +800,26 @@ static void avrcp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
     }
 }
 
+
+void set_bt_volume(int16_t val){
+    media_tracker.volume = (val*2 + 100) * 127 / 100;
+    avrcp_controller_set_absolute_volume(media_tracker.avrcp_cid, media_tracker.volume);
+    //printf("(via set usb volume) %d%% (%d)\n",  media_tracker.volume * 100 / 127,  media_tracker.volume);
+}
+
+bool is_muted = false;
+
+bool get_bt_mute(){
+    return is_muted;
+}
+
+static bool _bt_sink_volume_changed = false;
+
+// getter returns a pointer to that storage
+bool * get_is_bt_sink_volume_changed_ptr(void){
+    return &_bt_sink_volume_changed;
+}
+
 static void avrcp_target_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
     UNUSED(size);
@@ -831,10 +851,16 @@ static void avrcp_target_packet_handler(uint8_t packet_type, uint16_t channel, u
             }
             switch (operation_id) {
                 case AVRCP_OPERATION_ID_PLAY:
-                    status = a2dp_source_start_stream(media_tracker.a2dp_cid, media_tracker.local_seid);
+                    is_muted = false;
+                    _bt_sink_volume_changed = true;
+                    avrcp_controller_set_absolute_volume(media_tracker.avrcp_cid, media_tracker.volume);
+                    //status = a2dp_source_start_stream(media_tracker.a2dp_cid, media_tracker.local_seid);
                     break;
                 case AVRCP_OPERATION_ID_PAUSE:
-                    status = a2dp_source_pause_stream(media_tracker.a2dp_cid, media_tracker.local_seid);
+                    _bt_sink_volume_changed = true;
+                    is_muted = true;
+                    avrcp_controller_set_absolute_volume(media_tracker.avrcp_cid, 0);
+                    //status = a2dp_source_pause_stream(media_tracker.a2dp_cid, media_tracker.local_seid);
                     break;
                 case AVRCP_OPERATION_ID_STOP:
                     status = a2dp_source_disconnect(media_tracker.a2dp_cid);
@@ -852,6 +878,10 @@ static void avrcp_target_packet_handler(uint8_t packet_type, uint16_t channel, u
     }
 }
 
+uint8_t get_bt_volume(){
+    return media_tracker.volume;
+}
+
 static void avrcp_controller_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
     UNUSED(channel);
     UNUSED(size);
@@ -862,7 +892,9 @@ static void avrcp_controller_packet_handler(uint8_t packet_type, uint16_t channe
     
     switch (packet[2]){
         case AVRCP_SUBEVENT_NOTIFICATION_VOLUME_CHANGED:
-            printf("AVRCP Controller: Notification Absolute Volume %d %%\n", avrcp_subevent_notification_volume_changed_get_absolute_volume(packet) * 100 / 127);
+            media_tracker.volume = avrcp_subevent_notification_volume_changed_get_absolute_volume(packet);
+            _bt_sink_volume_changed = true;
+            printf("AVRCP Controller: Notification Absolute Volume %d %%\n", media_tracker.volume * 100 / 127);\
             break;
         case AVRCP_SUBEVENT_NOTIFICATION_EVENT_BATT_STATUS_CHANGED:
             // see avrcp_battery_status_t

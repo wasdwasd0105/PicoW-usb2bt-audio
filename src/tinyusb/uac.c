@@ -46,6 +46,7 @@
 
  uint16_t buffer_counter = 0;
  uint16_t audio_buffer_pool[AUDIO_BUF_POOL_LEN] = {0};
+ bool need_change_bt_volume = false;
  
  #define N_SAMPLE_RATES  TU_ARRAY_SIZE(sample_rates)
  
@@ -78,6 +79,9 @@
    VOLUME_CTRL_100_DB = 25600,
    VOLUME_CTRL_SILENCE = 0x8000,
  };
+
+ #define BT_VOL_MAX   127
+ #define USB_ATT_MAX  25600
  
  static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
  
@@ -101,7 +105,7 @@
  
  //void led_blinking_task(void);
  void audio_task(void);
- //void audio_control_task(void);
+ void audio_control_task(void);
  
  /*------------- MAIN -------------*/
  void tinyusb_main(void)
@@ -131,6 +135,11 @@
     audio_task(); 
  }
  
+
+ void tinyusb_control_task(void){
+  audio_control_task();
+  }
+
  //--------------------------------------------------------------------+
  // Device callbacks
  //--------------------------------------------------------------------+
@@ -281,6 +290,10 @@
      TU_VERIFY(request->wLength == sizeof(audio_control_cur_1_t));
  
      mute[request->bChannelNumber] = ((audio_control_cur_1_t const *)buf)->bCur;
+
+     if(request->bChannelNumber == 0){
+      need_change_bt_volume = true;
+     }
  
      TU_LOG1("Set channel %d Mute: %d\r\n", request->bChannelNumber, mute[request->bChannelNumber]);
  
@@ -292,7 +305,11 @@
  
      volume[request->bChannelNumber] = ((audio_control_cur_2_t const *)buf)->bCur;
  
-     TU_LOG1("Set channel %d volume: %d dB\r\n", request->bChannelNumber, volume[request->bChannelNumber] / 256);
+     TU_LOG1("Set channel %d volume: %d dB\r\n", request->bChannelNumber, volume[request->bChannelNumber]/256);
+
+     if(request->bChannelNumber == 0){
+      need_change_bt_volume = true;
+     }
  
      return true;
    }
@@ -409,15 +426,6 @@
       int16_t *src = (int16_t *)spk_buf;
       uint16_t sample_count = spk_data_size / 4; // should be 44-45
 
-
-      int16_t gain = 32768; // default 0dB
-      if (volume[0] < 0)
-      {
-          int atten_steps = (-volume[0]) / (6 * 256); // every ~6dB → halve
-          if (atten_steps > 15) atten_steps = 15;     // avoid zero gain
-          gain >>= atten_steps;
-      }
-
       // Check if usb_audio_buf_counter is in the range of shared_audio_counter and shared_audio_counter + num_audio_samples_per_sbc_buffer * 2
       // 128 is a not good value; need get from btstack_sbc_encoder_sbc_buffer_length()
       if (get_bt_buf_counter() < buffer_counter && buffer_counter < (get_bt_buf_counter() + 128 * 2)){
@@ -429,13 +437,10 @@
         {
             int16_t sample = src[i];
 
-            // apply gain in Q1.15 format: (sample * gain) >> 15
-            int32_t scaled = (sample * gain) >> 15;
-
             if (buffer_counter >= AUDIO_BUF_POOL_LEN)
                 buffer_counter = 0;
 
-            audio_buffer_pool[buffer_counter++] = (int16_t)scaled;
+            audio_buffer_pool[buffer_counter++] = (int16_t)sample;
         }
 
       set_usb_buf_counter(buffer_counter);
@@ -444,42 +449,50 @@
    }
  }
  
-//  void audio_control_task(void)
-//  {
-//    // Press on-board button to control volume
-//    // Open host volume control, volume should switch between 10% and 100%
+void audio_control_task(void)
+ {
+   if (*get_is_bt_sink_volume_changed_ptr())
+   {
+
+    uint8_t bt_level = get_bt_volume();
+
+    mute[0] = get_bt_mute();
+
+    // 2) invert & scale into 0…25600
+    //    (BT_VOL_MAX - bt_level) maps 127→0, 0→127
+    //    multiply then divide with rounding
+    uint16_t usb_level = (bt_level > BT_VOL_MAX)
+                       ? USB_ATT_MAX
+                       : (uint16_t)(( (uint32_t)(BT_VOL_MAX - bt_level)
+                                     * USB_ATT_MAX
+                                     + (BT_VOL_MAX/2) )
+                                   / BT_VOL_MAX);
+
+    // 3) store into USB-Audio’s volume (attenuation) field
+    volume[0] = -1 * usb_level / 2;
+
+     // 6.1 Interrupt Data Message
+     const audio_interrupt_data_t data = {
+       .bInfo = 0,                                       // Class-specific interrupt, originated from an interface
+       .bAttribute = AUDIO_CS_REQ_CUR,                   // Caused by current settings
+       .wValue_cn_or_mcn = 0,                            // CH0: master volume
+       .wValue_cs = AUDIO_FU_CTRL_VOLUME,                // Volume change
+       .wIndex_ep_or_int = 0,                            // From the interface itself
+       .wIndex_entity_id = UAC2_ENTITY_SPK_FEATURE_UNIT, // From feature unit
+     };
  
-//    // Poll every 50ms
-//    const uint32_t interval_ms = 50;
-//    static uint32_t start_ms = 0;
-//    static uint32_t btn_prev = 0;
- 
-//    if ( board_millis() - start_ms < interval_ms) return; // not enough time
-//    start_ms += interval_ms;
- 
-//    uint32_t btn = board_button_read();
- 
-//    if (!btn_prev && btn)
-//    {
-//      // Adjust volume between 0dB (100%) and -30dB (10%)
-//      for (int i = 0; i < CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1; i++)
-//      {
-//        volume[i] = volume[i] == 0 ? -VOLUME_CTRL_30_DB : 0;
-//      }
- 
-//      // 6.1 Interrupt Data Message
-//      const audio_interrupt_data_t data = {
-//        .bInfo = 0,                                       // Class-specific interrupt, originated from an interface
-//        .bAttribute = AUDIO_CS_REQ_CUR,                   // Caused by current settings
-//        .wValue_cn_or_mcn = 0,                            // CH0: master volume
-//        .wValue_cs = AUDIO_FU_CTRL_VOLUME,                // Volume change
-//        .wIndex_ep_or_int = 0,                            // From the interface itself
-//        .wIndex_entity_id = UAC2_ENTITY_SPK_FEATURE_UNIT, // From feature unit
-//      };
- 
-//      tud_audio_int_write(&data);
-//    }
- 
-//    btn_prev = btn;
-//  }
+     tud_audio_int_write(&data);
+     *get_is_bt_sink_volume_changed_ptr() = false;
+   }
+
+   if (need_change_bt_volume){
+    if(mute[0] == 1){
+      set_bt_volume(-50);
+    }else{
+      set_bt_volume(volume[0]/256);
+    }
+    need_change_bt_volume = false;
+   }
+
+  }
  
