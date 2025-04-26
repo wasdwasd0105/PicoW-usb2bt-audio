@@ -40,7 +40,7 @@
  //--------------------------------------------------------------------+
  
  // List of supported sample rates
- const uint32_t sample_rates[] = {44100, 48000};
+ const uint32_t sample_rates[] = {44100};
  
  uint32_t current_sample_rate  = 44100;
 
@@ -90,6 +90,9 @@
  int8_t mute[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1];       // +1 for master channel 0
  int16_t volume[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX + 1];    // +1 for master channel 0
  
+ int16_t volume0_last = 0;
+ int8_t mute0_last = 0; 
+
  // Buffer for microphone data
  //int32_t mic_buf[CFG_TUD_AUDIO_FUNC_1_EP_IN_SW_BUF_SZ / 4];
 
@@ -147,13 +150,13 @@
  // Invoked when device is mounted
  void tud_mount_cb(void)
  {
-   blink_interval_ms = BLINK_MOUNTED;
+   //blink_interval_ms = BLINK_MOUNTED;
  }
  
  // Invoked when device is unmounted
  void tud_umount_cb(void)
  {
-   blink_interval_ms = BLINK_NOT_MOUNTED;
+   //blink_interval_ms = BLINK_NOT_MOUNTED;
  }
  
  // Invoked when usb bus is suspended
@@ -162,13 +165,13 @@
  void tud_suspend_cb(bool remote_wakeup_en)
  {
    (void)remote_wakeup_en;
-   blink_interval_ms = BLINK_SUSPENDED;
+   printf("tud_suspend_cb\n");
  }
  
  // Invoked when usb bus is resumed
  void tud_resume_cb(void)
  {
-   blink_interval_ms = tud_mounted() ? BLINK_MOUNTED : BLINK_NOT_MOUNTED;
+  printf("tud_resume_cb\n");
  }
  
  // Helper for clock get requests
@@ -416,10 +419,14 @@
  // AUDIO Task
  //--------------------------------------------------------------------+
 
+uint16_t usb_stop_delay = 0;
+
  void audio_task(void)
  {
    if (spk_data_size)
    {
+    usb_stop_delay = 0;
+    set_usb_streaming(true);
     //printf("currect data size is %d\n", spk_data_size);
     if (current_resolution == 16)
     {
@@ -446,9 +453,15 @@
       set_usb_buf_counter(buffer_counter);
       spk_data_size = 0;
     }
+   } else{
+    usb_stop_delay++;
+    if (usb_stop_delay > 1000){
+      set_usb_streaming(false);
+    }
    }
  }
  
+
 void audio_control_task(void)
  {
    if (*get_is_bt_sink_volume_changed_ptr())
@@ -486,12 +499,35 @@ void audio_control_task(void)
    }
 
    if (need_change_bt_volume){
-    if(mute[0] == 1){
-      set_bt_volume(-50);
+
+    //printf("vol is %d\n", volume[0]);
+    
+    if(mute[0] == 1 && volume0_last == volume[0]){
+      if (mute0_last == 1){
+        set_bt_volume(volume[0]/256);
+        mute0_last = 0;
+        mute[0] = 0;
+      }else{
+        mute0_last = 1;
+        set_bt_volume(-50);
+      }
     }else{
       set_bt_volume(volume[0]/256);
     }
+    volume0_last = volume[0];
     need_change_bt_volume = false;
+
+    const audio_interrupt_data_t data = {
+      .bInfo = 0,                                       // Class-specific interrupt, originated from an interface
+      .bAttribute = AUDIO_CS_REQ_CUR,                   // Caused by current settings
+      .wValue_cn_or_mcn = 0,                            // CH0: master volume
+      .wValue_cs = AUDIO_FU_CTRL_VOLUME,                // Volume change
+      .wIndex_ep_or_int = 0,                            // From the interface itself
+      .wIndex_entity_id = UAC2_ENTITY_SPK_FEATURE_UNIT, // From feature unit
+    };
+
+    tud_audio_int_write(&data);
+    //*get_is_bt_sink_volume_changed_ptr() = false;
    }
 
   }

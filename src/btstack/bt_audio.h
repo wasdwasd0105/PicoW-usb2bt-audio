@@ -11,6 +11,7 @@ bool get_bt_audio_steam_ready(void);
 void set_shared_audio_buffer(int16_t *data);
 bool get_audio_buffer_lock();
 
+void set_usb_streaming(bool flag);
 
 void set_bt_volume(int16_t);
 

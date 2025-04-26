@@ -326,6 +326,7 @@ static int16_t * shared_audio_ptr;
 static bool a2dp_is_connected_flag = false;
 static uint8_t led_counter = 0;
 static uint16_t usb_audio_buf_counter = 0;
+static bool is_usb_streaming = false;
 
 
 bool get_a2dp_connected_flag(){
@@ -349,11 +350,21 @@ void set_usb_buf_counter(uint16_t counter){
     usb_audio_buf_counter = counter;
 }
 
+void set_usb_streaming(bool flag){
+    is_usb_streaming = flag;
+}
+
 
 static int a2dp_demo_fill_sbc_audio_buffer(a2dp_media_sending_context_t * context){
     // perform sbc encoding
     int total_num_bytes_read = 0;
     unsigned int num_audio_samples_per_sbc_buffer = btstack_sbc_encoder_num_audio_frames();
+
+    if (!is_usb_streaming){
+        for (uint16_t i = 0; i < AUDIO_BUF_POOL_LEN; i++){
+            shared_audio_ptr[i] = 0;
+        }
+    }
 
     while (context->samples_ready >= num_audio_samples_per_sbc_buffer &&
      (context->max_media_payload_size - context->sbc_storage_count) >= btstack_sbc_encoder_sbc_buffer_length()){
