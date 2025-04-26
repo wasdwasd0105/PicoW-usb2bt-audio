@@ -6,10 +6,10 @@ project(libldac
 set(CMAKE_C_STANDARD 99)
 
 
-# option(LDAC_SOFT_FLOAT "For device without FPU, turn on this option" ON)
-# if(${LDAC_SOFT_FLOAT} STREQUAL ON)
-#     set(LDAC_SOFT_FLOAT_DEFINE "-D_32BIT_FIXED_POINT")
-# endif()
+option(LDAC_SOFT_FLOAT "For device without FPU, turn on this option" ON)
+if(${LDAC_SOFT_FLOAT} STREQUAL ON)
+    set(LDAC_SOFT_FLOAT_DEFINE "-D_32BIT_FIXED_POINT")
+endif()
 
 if("${INSTALL_LIBDIR}" STREQUAL "")
     set(INSTALL_LIBDIR ${CMAKE_INSTALL_PREFIX}/lib)
@@ -27,7 +27,7 @@ if("${INSTALL_LDAC_INCLUDEDIR}" STREQUAL "")
     set(INSTALL_LDAC_INCLUDEDIR ${INSTALL_INCLUDEDIR}/ldac)
 endif()
 
-# set(LDAC_SOFT_FLOAT ON)
+#set(LDAC_SOFT_FLOAT ON)
 
 
 add_subdirectory(pkgconfig)

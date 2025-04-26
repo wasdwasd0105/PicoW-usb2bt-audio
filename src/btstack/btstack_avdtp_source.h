@@ -21,6 +21,8 @@ uint8_t get_bt_volume();
 
 bool get_bt_mute();
 
+void set_usb_streaming(bool flag);
+
 bool * get_is_bt_sink_volume_changed_ptr();
 
 int btstack_main(int argc, const char * argv[]);

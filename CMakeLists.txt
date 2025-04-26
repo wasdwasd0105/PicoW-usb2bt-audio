@@ -89,10 +89,11 @@ ldacBT_abr
 target_compile_definitions(PicoW_USB_BT_Audio PRIVATE
     CYW43_LWIP=0
     PICO_FLASH_ASSUME_CORE1_SAFE=1
+    LDAC_SOFT_FLOAT=OFF
 )
 
 # must enable on rp2040 & 330kbps(MQ)
-#set(LDAC_SOFT_FLOAT_DEFINE "-D_32BIT_FIXED_POINT")
+
 
 # Export binaries like hex, bin, and uf2 files.
 pico_add_extra_outputs(${PROJECT_NAME})

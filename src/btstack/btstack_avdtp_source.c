@@ -337,6 +337,7 @@ static void a2dp_demo_send_media_packet(void) {
 static int shared_audio_counter = 0;
 static uint16_t usb_audio_buf_counter = 0;
 static int16_t * shared_audio_ptr;
+static bool is_usb_streaming = false;
 
 void set_usb_buf_counter(uint16_t counter){
     usb_audio_buf_counter = counter;
@@ -354,12 +355,21 @@ bool check_is_streaming(){
     return is_streaming;
 }
 
+void set_usb_streaming(bool flag){
+    is_usb_streaming = flag;
+}
+
 
 static int fill_sbc_audio_buffer(a2dp_media_sending_context_t * context){
     // perform sbc encoding
     int total_num_bytes_read = 0;
     unsigned int num_audio_samples_per_sbc_buffer = btstack_sbc_encoder_num_audio_frames();
 
+    if (!is_usb_streaming){
+        for (uint16_t i = 0; i < AUDIO_BUF_POOL_LEN; i++){
+            shared_audio_ptr[i] = 0;
+        }
+    }
 
     while (context->samples_ready >= num_audio_samples_per_sbc_buffer &&
            (context->max_media_payload_size - context->codec_storage_count) >= btstack_sbc_encoder_sbc_buffer_length()){
@@ -397,6 +407,12 @@ static int a2dp_demo_fill_ldac_audio_buffer(a2dp_media_sending_context_t *contex
     if (context->codec_storage_count == 0)
         context->codec_storage_count = 1;
 
+    if (!is_usb_streaming){
+        for (uint16_t i = 0; i < AUDIO_BUF_POOL_LEN; i++){
+            shared_audio_ptr[i] = 0;
+        }
+    }
+    
     while (context->samples_ready >= num_audio_samples_per_ldac_buffer && encoded == 0) {
 
         if (ldacBT_encode(handleLDAC, &shared_audio_ptr[shared_audio_counter], &consumed, &context->codec_storage[context->codec_storage_count], &encoded, &frames) != 0) {
@@ -868,7 +884,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 // HQ 909kbps -> audio_timer_interval = 1 
                 // SQ 606kbps -> audio_timer_interval <= 5
                 // MQ 303kbps -> audio_timer_interval <= 10
-                audio_timer_interval = 2;
+                audio_timer_interval = 1;
                 current_sample_rate = ldac_configuration.sampling_frequency;
                 printf("current LDAC sampling rate is %d \n", current_sample_rate);
 

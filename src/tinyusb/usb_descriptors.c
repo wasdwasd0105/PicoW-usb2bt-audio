@@ -146,9 +146,9 @@ char const *string_desc_arr[] =
 {
   (const char[]) { 0x09, 0x04 },  // 0: is supported language is English (0x0409)
   "TinyUSB",                      // 1: Manufacturer
-  "TinyUSB headset",              // 2: Product
+  "TinyUSB LDAC",              // 2: Product
   NULL,                           // 3: Serials will use unique ID if possible
-  "TinyUSB Speakers",             // 4: Audio Interface
+  "TinyUSB LDAC",             // 4: Audio Interface
   "TinyUSB LDAC",                 // 5: Audio Interface
 };
 

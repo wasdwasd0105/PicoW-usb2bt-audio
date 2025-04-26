@@ -150,7 +150,7 @@ int main() {
     //bt_disconnect_and_scan();
     
     static repeating_timer_t usb_timer;
-    add_repeating_timer_us(-25, usb_timer_callback, NULL, &usb_timer);
+    add_repeating_timer_us(-30, usb_timer_callback, NULL, &usb_timer);
 
     while (1) {
         //printf("get_bootsel_button is %d\n", get_bootsel_button());
