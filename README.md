@@ -1,15 +1,5 @@
 # PicoW USB Audio to Bluetooth Adapter
 The Pico W USB Audio to Bluetooth Adapter transforms your Raspberry Pi Pico W into a high-quality audio streaming device.
-It allows any device with a USB input, including MacOS, Windows, Linux, Nintendo Switch, PS4/PS5, and more, to gain Bluetooth Audio capability.
-With Pico W Adapter, you can easily transmit audio wirelessly from your USB audio source to your Bluetooth headphones or speaker, enhancing your listening experience.
-
-
-The Pro version is designed to stream audio with multiple codecs. Currently, it is under development and not very stable. If you don't need to stream the LDAC audio, you can use the regular version.  It is much more stable and easy to use.
-
-
-To make sure we can keep working on free and open-source projects like this,  
-**please consider becoming a [:heart: Sponsor via PayPal](https://www.paypal.com/donate/?business=UZAK3WFV233ML&no_recurring=0&item_name=Help+me+build+more+project%21&currency_code=USD) or support us via [:coffee: Ko-fi](https://ko-fi.com/wasdwasd0105).**
-
 
 <p align="center">
 <img alt="Logo" src="logo.png" width="200">
@@ -23,13 +13,7 @@ Setting up PicoW requires no driver or software installation. Simply plug the Pi
 Pico W Bluetooth Adapter utilizes multiple codecs to deliver high-quality audio. 
 
 #### LDAC
-The input is 16-bit 44100Hz PCM audio, and it can steam LDAC audio at 303(Mobile Quality) and 606(Standard Quality) Kbps. 303 is more stable than 606 Kbps. 
-
-#### APTX/ APTX HD
-Coming soon. Aptx connection have set up. However, the Pico W is not powerful enough to use [libopenaptx](https://github.com/pali/libopenaptx) to encode real-time audio. It will use 30ms to encode a 10ms audio. I will try some alternative projects or optimize the library.
-
-#### AAC
-Will try fdk-aac, but not sure it can run
+The input is 16-bit 44100Hz PCM audio, and it can steam LDAC audio at 303(Mobile Quality) on Pico W and 606(Standard Quality) Kbps/ 909 Kbps on Pico 2 W.
 
 #### SBC
 Ready to use
@@ -85,31 +69,22 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
 2. **Blinking Fast (0.5s):** It means that the PicoW Adapter is in pairing mode.
 3. **On (Steady Light):** It means that the PicoW Adapter is on standby. Short-press the key to reconnect the last saved device.
-
+   
 
 ## Compile & Debug
 
 In order to compile the PicoW USB Audio to Bluetooth Adapter firmware from source code, you need to follow these steps:
 
-1. **Prepare your environment:** Make sure that you have a working development environment for Raspberry Pi Pico projects. This includes having the required compiler and tools installed. You may refer to the [Getting started with Raspberry Pi Pico](https://www.raspberrypi.org/documentation/rp2040/getting-started/) guide for detailed instructions.
+1. **Prepare your environment:** Use VS Code and Raspberry Pi Pico extension
 
-2. **Set environment variables:** Before you can build the project, you need to set two environment variables: `PICO_SDK_PATH` and `PICO_EXTRAS_PATH`. For example:
+2. **Import the project on the Raspberry Pi Pico extension:** Import the project using General -> Import Project
 
-```bash
-export PICO_SDK_PATH=~/pico-sdk
-export PICO_EXTRAS_PATH=~/pico-extras
-```
+Choose Pico W or Pico 2 W using Switch Board
 
-3. **Build the project:** After setting up your environment, navigate to the project directory in a terminal and run the provided build script:
+Then you can Debug, Compile and Run the project on the Project tab
 
-```bash
-./build.sh
-```
-
-This script should compile the project and produce a UF2 firmware file that you can flash onto your Pico W.
-
-4. **Debug Serial input/output:** You can use uart to see the debug info. Connect the GPIO 0 and 1 as TX and RX. To enable BTstack's serial input, you can uncomment `HAVE_BTSTACK_STDIN` under btstack_config.h
-
+3. **Debug Serial input/output:** You can use uart to see the debug info. Connect the GPIO 0 and 1 as TX and RX. To enable BTstack's serial input, you can uncomment `HAVE_BTSTACK_STDIN` under btstack_config.h
+   
 
 ## Acknowledgments
 
