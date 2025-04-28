@@ -53,12 +53,20 @@
 
 #include "../pico_w_led.h"
 
+#define HAVE_AAC_FDK
 
-#define HAVE_LDAC_ENCODER
-#include <ldacBT.h>
+// #define HAVE_LDAC_ENCODER
+// #include <ldacBT.h>
 
-#define A2DP_CODEC_VENDOR_ID_SONY 0x12d
-#define A2DP_SONY_CODEC_LDAC 0xaa
+// #define A2DP_CODEC_VENDOR_ID_SONY 0x12d
+// #define A2DP_SONY_CODEC_LDAC 0xaa
+
+
+#include <aacenc_lib.h>
+
+
+#define A2DP_CODEC_VENDOR_ID_FRAUNHOFER 0x08A9
+#define A2DP_FRAUNHOFER_CODEC_LC3PLUS 0x0001
 
 #define AVDTP_MAX_SEP_NUM 10
 #define AVDTP_MAX_MEDIA_CODEC_CONFIG_LEN 16
@@ -91,13 +99,44 @@ typedef struct {
 } avdtp_media_codec_configuration_sbc_t;
 
 
-typedef struct {
-    int reconfigure;
-    int channel_mode;
-    int num_channels;
-    int num_samples;
-    int sampling_frequency;
-} avdtp_media_codec_configuration_ldac_t;
+// typedef struct {
+//     int reconfigure;
+//     int channel_mode;
+//     int num_channels;
+//     int num_samples;
+//     int sampling_frequency;
+// } avdtp_media_codec_configuration_ldac_t;
+
+#define TABLE_SIZE_441HZ            100
+static int sine_phase;
+
+
+static const int16_t sine_int16[] = {
+    0,    2057,    4107,    6140,    8149,   10126,   12062,   13952,   15786,   17557,
+19260,   20886,   22431,   23886,   25247,   26509,   27666,   28714,   29648,   30466,
+31163,   31738,   32187,   32509,   32702,   32767,   32702,   32509,   32187,   31738,
+31163,   30466,   29648,   28714,   27666,   26509,   25247,   23886,   22431,   20886,
+19260,   17557,   15786,   13952,   12062,   10126,    8149,    6140,    4107,    2057,
+    0,   -2057,   -4107,   -6140,   -8149,  -10126,  -12062,  -13952,  -15786,  -17557,
+-19260,  -20886,  -22431,  -23886,  -25247,  -26509,  -27666,  -28714,  -29648,  -30466,
+-31163,  -31738,  -32187,  -32509,  -32702,  -32767,  -32702,  -32509,  -32187,  -31738,
+-31163,  -30466,  -29648,  -28714,  -27666,  -26509,  -25247,  -23886,  -22431,  -20886,
+-19260,  -17557,  -15786,  -13952,  -12062,  -10126,   -8149,   -6140,   -4107,   -2057,
+};
+
+static void produce_sine_audio(int16_t * pcm_buffer, int num_samples_to_write){
+    int count;
+    for (count = 0; count < num_samples_to_write ; count++){
+        pcm_buffer[count * 2]     = sine_int16[sine_phase] >> VOLUME_REDUCTION;
+        pcm_buffer[count * 2 + 1] = sine_int16[sine_phase] >> VOLUME_REDUCTION;
+        sine_phase++;
+        if (sine_phase >= TABLE_SIZE_441HZ){
+            sine_phase -= TABLE_SIZE_441HZ;
+        }
+    }
+}
+
+
 
 
 
@@ -131,6 +170,12 @@ typedef struct {
 
 #ifdef HAVE_LDAC_ENCODER
 HANDLE_LDAC_BT handleLDAC;
+#endif
+
+
+#ifdef HAVE_AAC_FDK
+static HANDLE_AACENCODER handleAAC;
+static AACENC_InfoStruct aacinf;
 #endif
 
 static a2dp_media_sending_context_t media_tracker;
@@ -186,8 +231,12 @@ static struct {
 
 
 // setup stream endpoints
+
 avdtp_stream_endpoint_t * stream_endpoint_sbc;
-avdtp_stream_endpoint_t * stream_endpoint_ldac;
+//avdtp_stream_endpoint_t * stream_endpoint_ldac;
+
+avdtp_stream_endpoint_t * stream_endpoint_aac;
+
 
 static btstack_sbc_encoder_state_t sbc_encoder_state;
 static uint8_t is_cmd_triggered_localy = 0;
@@ -196,7 +245,7 @@ static bool a2dp_is_connected_flag = false;
 
 static bool finish_scan_avdtp_codec = false;
 
-static uint8_t audio_timer_interval = 5;
+static uint8_t audio_timer_interval = 10;
 
 
 static const uint8_t media_sbc_codec_capabilities[] = {
@@ -206,18 +255,43 @@ static const uint8_t media_sbc_codec_capabilities[] = {
 };
 
 
-static uint8_t media_ldac_codec_capabilities[] = {
-        0x2D, 0x1, 0x0, 0x0,
-        0xAA, 0,
-        0x20,
-        0x01,
-        0x1
+// static uint8_t media_ldac_codec_capabilities[] = {
+//         0x2D, 0x1, 0x0, 0x0,
+//         0xAA, 0,
+//         0x20,
+//         0x01,
+//         0x1
+// };
+
+#ifdef HAVE_AAC_FDK
+static uint8_t media_aac_codec_capabilities[] = {
+        0xF0,
+        0xFF,
+        0xFC,
+        0x80,
+        0,
+        0
 };
+
+typedef struct {
+    int reconfigure;
+    int sampling_frequency_bitmap;
+    int object_type_bitmap;
+    int bit_rate;
+    int channels_bitmap;
+    int vbr;
+} avdtp_media_codec_capabilities_aac_t;
+
+#endif
 
 // configurations for local stream endpoints
 static uint8_t local_stream_endpoint_sbc_media_codec_configuration[4];
 static uint8_t local_stream_endpoint_ldac_media_codec_configuration[9];
-static avdtp_media_codec_configuration_ldac_t ldac_configuration;
+//static avdtp_media_codec_configuration_ldac_t ldac_configuration;
+
+#ifdef HAVE_AAC_FDK
+static uint8_t local_stream_endpoint_aac_media_codec_configuration[6];
+#endif
 
 bool get_a2dp_connected_flag(){
     return a2dp_is_connected_flag;
@@ -281,19 +355,59 @@ static void a2dp_demo_send_media_packet_sbc(void){
     media_tracker.codec_ready_to_send = 0;
 }
 
+static void dump_media_packet(uint16_t cid, uint8_t seid,
+    uint32_t timestamp,
+    uint8_t *data, int len)
+{
+printf("[A2DP] cid 0x%04x  seid %u  ts %u  len %d\n",
+cid, seid, timestamp, len);
 
-static void a2dp_demo_send_media_packet_ldac(void) {
-
-    uint8_t num_frames = media_tracker.codec_num_frames;
-    media_tracker.codec_storage[0] = num_frames; // frames in first byte
-
-    a2dp_source_stream_send_media_payload_rtp(media_tracker.avdtp_cid, media_tracker.local_seid, 0, media_tracker.rtp_timestamp, &media_tracker.codec_storage[0], media_tracker.codec_storage_count);
-    media_tracker.rtp_timestamp += num_frames * LDACBT_ENC_LSU;
-
-    media_tracker.codec_storage_count = 0;
-    media_tracker.codec_ready_to_send = 0;
-    media_tracker.codec_num_frames = 0;
+/* print first 32 bytes in hex */
+int n = len > 32 ? 32 : len;
+for (int i = 0; i < n; i++)
+printf("%02X%c", data[i], (i % 16 == 15) ? '\n' : ' ');
+if (len > n) printf("…\n");
 }
+
+static void a2dp_demo_send_media_packet_aac(void) {
+    int bytes_to_send;
+    if (media_tracker.codec_storage_count > media_tracker.max_media_payload_size)
+        bytes_to_send = media_tracker.max_media_payload_size;
+    else
+        bytes_to_send = media_tracker.codec_storage_count;
+
+
+    dump_media_packet(media_tracker.avdtp_cid,
+            media_tracker.local_seid,
+            media_tracker.rtp_timestamp,
+            media_tracker.codec_storage,
+            bytes_to_send);
+
+    a2dp_source_stream_send_media_payload_rtp(media_tracker.avdtp_cid, 2, 0, media_tracker.rtp_timestamp, media_tracker.codec_storage, media_tracker.codec_storage_count);
+
+    
+    //a2dp_source_stream_send_media_payload_rtp(media_tracker.avdtp_cid, media_tracker.local_seid, 0, media_tracker.rtp_timestamp, media_tracker.codec_storage, media_tracker.codec_storage_count);
+
+    //printf("data sent\n");
+    //a2dp_source_stream_send_media_packet(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.codec_storage, bytes_to_send);
+    media_tracker.codec_storage_count -= bytes_to_send;
+    memcpy(media_tracker.codec_storage, &media_tracker.codec_storage[bytes_to_send], media_tracker.codec_storage_count);
+    media_tracker.codec_ready_to_send = 0;
+}
+
+
+// static void a2dp_demo_send_media_packet_ldac(void) {
+
+//     uint8_t num_frames = media_tracker.codec_num_frames;
+//     media_tracker.codec_storage[0] = num_frames; // frames in first byte
+
+//     a2dp_source_stream_send_media_payload_rtp(media_tracker.avdtp_cid, media_tracker.local_seid, 0, media_tracker.rtp_timestamp, &media_tracker.codec_storage[0], media_tracker.codec_storage_count);
+//     media_tracker.rtp_timestamp += num_frames * LDACBT_ENC_LSU;
+
+//     media_tracker.codec_storage_count = 0;
+//     media_tracker.codec_ready_to_send = 0;
+//     media_tracker.codec_num_frames = 0;
+// }
 
 
 static uint32_t get_vendor_id(const uint8_t *codec_info) {
@@ -318,12 +432,17 @@ static void a2dp_demo_send_media_packet(void) {
         case AVDTP_CODEC_SBC:
             a2dp_demo_send_media_packet_sbc();
             break;
+
+        case AVDTP_CODEC_MPEG_2_4_AAC:
+            a2dp_demo_send_media_packet_aac();
+            break;
+
         case AVDTP_CODEC_NON_A2DP:
             local_cap = sc.local_stream_endpoint->sep.capabilities.media_codec;
             uint32_t local_vendor_id = get_vendor_id(local_cap.media_codec_information);
             uint16_t local_codec_id = get_codec_id(local_cap.media_codec_information);
-            if (local_vendor_id == A2DP_CODEC_VENDOR_ID_SONY && local_codec_id == A2DP_SONY_CODEC_LDAC)
-                a2dp_demo_send_media_packet_ldac();
+            // if (local_vendor_id == A2DP_CODEC_VENDOR_ID_SONY && local_codec_id == A2DP_SONY_CODEC_LDAC)
+            //     a2dp_demo_send_media_packet_ldac();
             break;
         default:
             // TODO:
@@ -396,43 +515,110 @@ static int fill_sbc_audio_buffer(a2dp_media_sending_context_t * context){
     return total_num_bytes_read;
 }
 
-static int a2dp_demo_fill_ldac_audio_buffer(a2dp_media_sending_context_t *context) {
-    int          total_samples_read                = 0;
-    unsigned int num_audio_samples_per_ldac_buffer = LDACBT_ENC_LSU;//LDACBT_ENC_LSU;
-    int          consumed;
-	int          encoded = 0;
-	int          frames;
+// static int a2dp_demo_fill_ldac_audio_buffer(a2dp_media_sending_context_t *context) {
+//     int          total_samples_read                = 0;
+//     unsigned int num_audio_samples_per_ldac_buffer = LDACBT_ENC_LSU;//LDACBT_ENC_LSU;
+//     int          consumed;
+// 	int          encoded = 0;
+// 	int          frames;
 
-    // reserve first byte for number of frames
-    if (context->codec_storage_count == 0)
-        context->codec_storage_count = 1;
+//     // reserve first byte for number of frames
+//     if (context->codec_storage_count == 0)
+//         context->codec_storage_count = 1;
 
-    if (!is_usb_streaming){
-        for (uint16_t i = 0; i < AUDIO_BUF_POOL_LEN; i++){
-            shared_audio_ptr[i] = 0;
-        }
-    }
+//     if (!is_usb_streaming){
+//         for (uint16_t i = 0; i < AUDIO_BUF_POOL_LEN; i++){
+//             shared_audio_ptr[i] = 0;
+//         }
+//     }
     
-    while (context->samples_ready >= num_audio_samples_per_ldac_buffer && encoded == 0) {
+//     while (context->samples_ready >= num_audio_samples_per_ldac_buffer && encoded == 0) {
 
-        if (ldacBT_encode(handleLDAC, &shared_audio_ptr[shared_audio_counter], &consumed, &context->codec_storage[context->codec_storage_count], &encoded, &frames) != 0) {
-            printf("LDAC encoding error: %d\n", ldacBT_get_error_code(handleLDAC));
-        }
-        consumed = consumed / (2 * ldac_configuration.num_channels);
-        total_samples_read += consumed;
-        context->codec_storage_count += encoded;
-        context->codec_num_frames += frames;
-        context->samples_ready -= consumed;
+//         if (ldacBT_encode(handleLDAC, &shared_audio_ptr[shared_audio_counter], &consumed, &context->codec_storage[context->codec_storage_count], &encoded, &frames) != 0) {
+//             printf("LDAC encoding error: %d\n", ldacBT_get_error_code(handleLDAC));
+//         }
+//         consumed = consumed / (2 * ldac_configuration.num_channels);
+//         total_samples_read += consumed;
+//         context->codec_storage_count += encoded;
+//         context->codec_num_frames += frames;
+//         context->samples_ready -= consumed;
 
-        shared_audio_counter += num_audio_samples_per_ldac_buffer * 2;
-        if (shared_audio_counter > AUDIO_BUF_POOL_LEN - 1){
-            shared_audio_counter = 0;
+//         shared_audio_counter += num_audio_samples_per_ldac_buffer * 2;
+//         if (shared_audio_counter > AUDIO_BUF_POOL_LEN - 1){
+//             shared_audio_counter = 0;
+//         }
+//     }
+
+//     return total_samples_read;
+// }
+
+
+#ifdef HAVE_AAC_FDK
+static int fill_aac_audio_buffer(a2dp_media_sending_context_t *context) {
+    int          total_samples_read               = 0;
+    unsigned int num_audio_samples_per_aac_buffer = aacinf.frameLength;
+
+    //printf("current aac samples %d\n", num_audio_samples_per_aac_buffer);
+
+    btstack_assert(num_audio_samples_per_aac_buffer <= 1024);
+    int16_t  pcm_frame[2048];
+    unsigned required_bytes = num_audio_samples_per_aac_buffer * aacinf.inputChannels;
+
+    AACENC_BufDesc in_buf   = { 0 }, out_buf = { 0 };
+    AACENC_InArgs  in_args  = { 0 };
+    AACENC_OutArgs out_args = { 0 };
+    int in_identifier = IN_AUDIO_DATA;
+    int in_size, in_elem_size;
+    int out_identifier = OUT_BITSTREAM_DATA;
+    int out_size, out_elem_size;
+    void *in_ptr, *out_ptr;
+
+    in_ptr                   = pcm_frame;
+    in_size                  = required_bytes;
+    in_elem_size             = 2;
+    in_buf.numBufs           = 1;
+    in_buf.bufs              = &in_ptr;
+    in_buf.bufferIdentifiers = &in_identifier;
+    in_buf.bufSizes          = &in_size;
+    in_buf.bufElSizes        = &in_elem_size;
+
+    out_elem_size             = 1;
+    out_buf.numBufs           = 1;
+    out_buf.bufs              = &out_ptr;
+    out_buf.bufferIdentifiers = &out_identifier;
+    out_buf.bufSizes          = &out_size;
+    out_buf.bufElSizes        = &out_elem_size;
+
+    while (context->samples_ready >= num_audio_samples_per_aac_buffer &&
+           (context->max_media_payload_size - context->codec_storage_count) > 0) {
+        produce_sine_audio((int16_t *) pcm_frame, num_audio_samples_per_aac_buffer);
+        in_args.numInSamples = required_bytes;
+        out_ptr              = &context->codec_storage[context->codec_storage_count];
+        out_size             = sizeof(context->codec_storage) - context->codec_storage_count;
+        out_buf.bufs         = &out_ptr;
+        out_buf.bufSizes     = &out_size;
+        AACENC_ERROR err;
+
+        if ((err = aacEncEncode(handleAAC, &in_buf, &out_buf, &in_args, &out_args)) != AACENC_OK) {
+            printf("Error in AAC encoding %d. Check if codec storage size is sufficient\n", err);
+        }else if (out_args.numOutBytes) {
+
+            /* ---- quick hexdump of the frame (ADTS header + payload) ---- */
+            uint8_t *p = (uint8_t *)out_ptr;
+            int n      = MIN(out_args.numOutBytes, 32);      // print first 32 bytes
+            //printf("AAC frame %4u B :", out_args.numOutBytes);
+            for (int i = 0; i < n; i++) printf(" %02X", p[i]);
+            if (out_args.numOutBytes > n) printf(" …");
+            printf("\n");
         }
+
+        total_samples_read += num_audio_samples_per_aac_buffer;
+        context->codec_storage_count += out_args.numOutBytes;
+        context->samples_ready -= num_audio_samples_per_aac_buffer;
     }
-
     return total_samples_read;
 }
-
+#endif
 
 static void avdtp_audio_timeout_handler(btstack_timer_source_t * timer){
 
@@ -483,23 +669,36 @@ static void avdtp_audio_timeout_handler(btstack_timer_source_t * timer){
             break;
         case AVDTP_CODEC_ATRAC_FAMILY:
             break;
+#ifdef HAVE_AAC_FDK
+        case AVDTP_CODEC_MPEG_2_4_AAC:
+            if (context->codec_storage_count == 0){
+                fill_aac_audio_buffer(context);
+            }
+
+            if (context->codec_storage_count > 0) {
+                // schedule sending
+                context->codec_ready_to_send = 1;
+                a2dp_source_stream_endpoint_request_can_send_now(context->avdtp_cid, context->local_seid);
+            }
+            break;
+#endif
         case AVDTP_CODEC_NON_A2DP:
             local_cap = sc.local_stream_endpoint->sep.capabilities.media_codec;
             uint32_t local_vendor_id = get_vendor_id(local_cap.media_codec_information);
             uint16_t local_codec_id = get_codec_id(local_cap.media_codec_information);
 
             // LDAC
-            if (local_vendor_id == A2DP_CODEC_VENDOR_ID_SONY && local_codec_id == A2DP_SONY_CODEC_LDAC) {
-                if (context->codec_ready_to_send)
-                    return;
-                a2dp_demo_fill_ldac_audio_buffer(context);
+            // if (local_vendor_id == A2DP_CODEC_VENDOR_ID_SONY && local_codec_id == A2DP_SONY_CODEC_LDAC) {
+            //     if (context->codec_ready_to_send)
+            //         return;
+            //     a2dp_demo_fill_ldac_audio_buffer(context);
 
-                if (context->codec_storage_count > 1) {
-                    // schedule sending
-                    context->codec_ready_to_send = 1;
-                    a2dp_source_stream_endpoint_request_can_send_now(context->avdtp_cid, context->local_seid);
-                }
-            }
+            //     if (context->codec_storage_count > 1) {
+            //         // schedule sending
+            //         context->codec_ready_to_send = 1;
+            //         a2dp_source_stream_endpoint_request_can_send_now(context->avdtp_cid, context->local_seid);
+            //     }
+            // }
             break;
         default:
             break;
@@ -580,6 +779,33 @@ static int find_remote_seid(uint8_t remote_seid){
     return -1;
 }
 
+
+
+#ifdef HAVE_AAC_FDK
+static int convert_aac_object_type(int bitmap) {
+    switch (bitmap) {
+        case AVDTP_AAC_MPEG4_SCALABLE:
+            return AOT_AAC_SCAL;
+        case AVDTP_AAC_MPEG4_LTP:
+            return AOT_AAC_LTP;
+        case AVDTP_AAC_MPEG4_LC:
+            return AOT_AAC_LC;
+        case AVDTP_AAC_MPEG2_LC:
+            // https://lists.freedesktop.org/archives/gstreamer-commits/2016-September/096332.html
+            return AOT_AAC_LC;
+        default:
+            printf("invalid aac aot config %d\n", bitmap);
+            return 0;
+    }
+}
+
+static int convert_aac_vbr(int vbr) {
+    if (vbr)
+        return 4;
+    else
+        return 0;
+}
+#endif
 
 static int convert_ldac_sampling_frequency(uint8_t frequency_bitmap) {
     switch (frequency_bitmap) {
@@ -773,6 +999,53 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             break;
         }
 
+        case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_MPEG_AUDIO_CAPABILITY:
+            // cache
+            remote_seid = avdtp_subevent_signaling_media_codec_sbc_capability_get_remote_seid(packet);
+            local_remote_seid_index = find_remote_seid(remote_seid);
+            btstack_assert(local_remote_seid_index >= 0);
+            (void) memcpy(remote_seps[local_remote_seid_index].media_codec_event, packet, size);
+            remote_seps[local_remote_seid_index].sep.capabilities.media_codec.media_codec_type = AVDTP_CODEC_MPEG_1_2_AUDIO;
+            remote_seps[local_remote_seid_index].have_media_codec_apabilities = true;
+            printf("CAPABILITY - MEDIA_CODEC: MPEG AUDIO, remote seid %u: \n", remote_seid);
+
+            break;
+
+        case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_MPEG_AAC_CAPABILITY: {
+            // cache
+            remote_seid = avdtp_subevent_signaling_media_codec_sbc_capability_get_remote_seid(packet);
+            local_remote_seid_index = find_remote_seid(remote_seid);
+            btstack_assert(local_remote_seid_index >= 0);
+            (void) memcpy(remote_seps[local_remote_seid_index].media_codec_event, packet, size);
+            remote_seps[local_remote_seid_index].sep.capabilities.media_codec.media_codec_type = AVDTP_CODEC_MPEG_2_4_AAC;
+            remote_seps[local_remote_seid_index].have_media_codec_apabilities = true;
+            printf("CAPABILITY - MEDIA_CODEC: MPEG AAC, remote seid %u: \n", remote_seid);
+
+            avdtp_media_codec_capabilities_aac_t aac_capabilities;
+            aac_capabilities.sampling_frequency_bitmap = a2dp_subevent_signaling_media_codec_mpeg_aac_capability_get_sampling_frequency_bitmap(packet);
+            aac_capabilities.object_type_bitmap = a2dp_subevent_signaling_media_codec_mpeg_aac_capability_get_object_type_bitmap(packet);
+            aac_capabilities.channels_bitmap = a2dp_subevent_signaling_media_codec_mpeg_aac_capability_get_channels_bitmap(packet);
+            aac_capabilities.bit_rate = a2dp_subevent_signaling_media_codec_mpeg_aac_capability_get_bit_rate(packet);
+            aac_capabilities.vbr = a2dp_subevent_signaling_media_codec_mpeg_aac_capability_get_vbr(packet);
+            printf("A2DP Source: Received AAC capabilities! Sampling frequency bitmap: 0x%04x, object type %u, channel mode %u, bitrate %u, vbr: %u\n",
+                   aac_capabilities.sampling_frequency_bitmap, aac_capabilities.object_type_bitmap, aac_capabilities.channels_bitmap,
+                   aac_capabilities.bit_rate, aac_capabilities.vbr);
+
+            break;
+        }
+
+        case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_ATRAC_CAPABILITY:
+            // cache
+            remote_seid = avdtp_subevent_signaling_media_codec_sbc_capability_get_remote_seid(packet);
+            local_remote_seid_index = find_remote_seid(remote_seid);
+            btstack_assert(local_remote_seid_index >= 0);
+            (void) memcpy(remote_seps[local_remote_seid_index].media_codec_event, packet, size);
+            remote_seps[local_remote_seid_index].sep.capabilities.media_codec.media_codec_type = AVDTP_CODEC_ATRAC_FAMILY;
+            remote_seps[local_remote_seid_index].have_media_codec_apabilities = true;
+            printf("CAPABILITY - MEDIA_CODEC: ATRAC, remote seid %u: \n", remote_seid);
+
+            break;
+
         case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_OTHER_CAPABILITY:
             // cache
             remote_seid = avdtp_subevent_signaling_media_codec_sbc_capability_get_remote_seid(packet);
@@ -788,10 +1061,9 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             remote_seps[local_remote_seid_index].vendor_id = vendor_id;
             remote_seps[local_remote_seid_index].codec_id = codec_id;
 
-            if (vendor_id == A2DP_CODEC_VENDOR_ID_SONY && codec_id == A2DP_SONY_CODEC_LDAC)
-                printf("CAPABILITY - LDAC, remote seid %u\n", remote_seid);
-
-            else
+            // if (vendor_id == A2DP_CODEC_VENDOR_ID_SONY && codec_id == A2DP_SONY_CODEC_LDAC)
+            //     printf("CAPABILITY - LDAC, remote seid %u\n", remote_seid);
+            // else
                 printf("CAPABILITY - MEDIA_CODEC: OTHER, remote seid %u: \n", remote_seid);
             break;
 
@@ -847,50 +1119,137 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             break;
         }
 
+        case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_MPEG_AAC_CONFIGURATION: {
+            printf("Set configuration and init encoder\n");
+            avdtp_configuration_mpeg_aac_t aac_configuration;
+            // avdtp_media_codec_configuration_aac_t aac_configuration;
+            aac_configuration.sampling_frequency = a2dp_subevent_signaling_media_codec_mpeg_aac_configuration_get_sampling_frequency(
+                    packet);
+            aac_configuration.object_type = a2dp_subevent_signaling_media_codec_mpeg_aac_configuration_get_object_type(
+                    packet);
+            aac_configuration.channels = a2dp_subevent_signaling_media_codec_mpeg_aac_configuration_get_num_channels(
+                    packet);
+            aac_configuration.bit_rate = a2dp_subevent_signaling_media_codec_mpeg_aac_configuration_get_bit_rate(
+                    packet);
+            aac_configuration.vbr = a2dp_subevent_signaling_media_codec_mpeg_aac_configuration_get_vbr(packet);
+
+            printf("A2DP Source: Received AAC configuration! Sampling frequency: %u, object type %u, channel mode %u, bitrate %u, vbr: %u\n",
+                   aac_configuration.sampling_frequency, aac_configuration.object_type, aac_configuration.channels,
+                   aac_configuration.bit_rate, aac_configuration.vbr);
+
+           int aot = convert_aac_object_type(aac_configuration.object_type);
+           int vbr = convert_aac_vbr(aac_configuration.vbr);
+
+            //init encoder
+            AACENC_ERROR err;
+            if ((err = aacEncOpen(&handleAAC, 0x01, aac_configuration.channels)) != AACENC_OK) {
+                printf("Couldn't open AAC encoder: %d\n", err);
+                break;
+            }
+            if ((err = aacEncoder_SetParam(handleAAC, AACENC_AOT, 2)) != AACENC_OK) {
+                printf("Couldn't set audio object type: %d\n", err);
+                break;
+            }
+            if ((err = aacEncoder_SetParam(handleAAC, AACENC_BITRATE, aac_configuration.bit_rate)) != AACENC_OK) {
+                printf("Couldn't set bitrate: %d\n", err);
+                break;
+            }
+            if ((err = aacEncoder_SetParam(handleAAC, AACENC_SAMPLERATE, aac_configuration.sampling_frequency)) !=
+                AACENC_OK) {
+                printf("Couldn't set sampling rate: %d\n", err);
+                break;
+            }
+            if ((err = aacEncoder_SetParam(handleAAC, AACENC_CHANNELMODE, aac_configuration.channels)) != AACENC_OK) {
+                printf("Couldn't set channel mode: %d\n", err);
+                break;
+            }
+            if (aac_configuration.vbr) {
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_BITRATEMODE, vbr)) != AACENC_OK) {
+                    printf("Couldn't set VBR bitrate mode %u: %d\n", aac_configuration.vbr, err);
+                    break;
+                }
+            }
+            if ((err = aacEncoder_SetParam(handleAAC, AACENC_AFTERBURNER, false)) != AACENC_OK) {
+                printf("Couldn't enable afterburner: %d\n", err);
+                break;
+            }
+            if ((err = aacEncoder_SetParam(handleAAC, AACENC_TRANSMUX, TT_MP4_LATM_MCP1)) != AACENC_OK) {
+                printf("Couldn't enable LATM transport type: %d\n", err);
+                break;
+            }
+            if ((err = aacEncoder_SetParam(handleAAC, AACENC_HEADER_PERIOD, 1)) != AACENC_OK) {
+                printf("Couldn't set LATM header period: %d\n", err);
+                break;
+            }
+            if ((err = aacEncoder_SetParam(handleAAC, AACENC_AUDIOMUXVER, 1)) != AACENC_OK) {
+                printf("Couldn't set LATM version: %d\n", err);
+                break;
+            }
+            if ((err = aacEncEncode(handleAAC, NULL, NULL, NULL, NULL)) != AACENC_OK) {
+                printf("Couldn't initialize AAC encoder: %d\n", err);
+                break;
+            }
+            if ((err = aacEncInfo(handleAAC, &aacinf)) != AACENC_OK) {
+                printf("Couldn't get encoder info: %d\n", err);
+                break;
+            }
+            current_sample_rate = aac_configuration.sampling_frequency;
+            printf("AAC setup complete\n", err);
+            break;
+        }
+
+        case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_MPEG_AUDIO_CONFIGURATION:
+        case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_ATRAC_CONFIGURATION:
+            // TODO: handle other configuration event
+            printf("Config not handled for %s\n", codec_name_for_type(remote_seps[selected_remote_sep_index].sep.capabilities.media_codec.media_codec_type));
+            break;
         case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_OTHER_CONFIGURATION:
             printf("Received other configuration\n");
-            uint8_t *codec_info = (uint8_t *) a2dp_subevent_signaling_media_codec_other_configuration_get_media_codec_information(packet);
+            // uint8_t *codec_info = (uint8_t *) a2dp_subevent_signaling_media_codec_other_configuration_get_media_codec_information(packet);
 
-            vendor_id = get_vendor_id(codec_info);
-            codec_id = get_codec_id(codec_info);
+            // vendor_id = get_vendor_id(codec_info);
+            // codec_id = get_codec_id(codec_info);
 
-            // LDAC
-            if (vendor_id == A2DP_CODEC_VENDOR_ID_SONY && codec_id == A2DP_SONY_CODEC_LDAC) {
+            // // LDAC
+            // if (vendor_id == A2DP_CODEC_VENDOR_ID_SONY && codec_id == A2DP_SONY_CODEC_LDAC) {
 
-                ldac_configuration.reconfigure = a2dp_subevent_signaling_media_codec_other_configuration_get_reconfigure(packet);
-                ldac_configuration.sampling_frequency = codec_info[6];
-                ldac_configuration.channel_mode = codec_info[7];
-                //ldac_configuration.sampling_frequency = 44100;
-                ldac_configuration.sampling_frequency = convert_ldac_sampling_frequency(ldac_configuration.sampling_frequency);
-                //ldac_configuration.num_channels = convert_ldac_num_channels(ldac_configuration.channel_mode);
-                ldac_configuration.num_channels = 2;
+            //     ldac_configuration.reconfigure = a2dp_subevent_signaling_media_codec_other_configuration_get_reconfigure(packet);
+            //     ldac_configuration.sampling_frequency = codec_info[6];
+            //     ldac_configuration.channel_mode = codec_info[7];
+            //     //ldac_configuration.sampling_frequency = 44100;
+            //     ldac_configuration.sampling_frequency = convert_ldac_sampling_frequency(ldac_configuration.sampling_frequency);
+            //     //ldac_configuration.num_channels = convert_ldac_num_channels(ldac_configuration.channel_mode);
+            //     ldac_configuration.num_channels = 2;
 
-                printf("A2DP Source: Received LDAC configuration! Sampling frequency: %d, channel mode: %d channels: %d\n",
-                        ldac_configuration.sampling_frequency, ldac_configuration.channel_mode, ldac_configuration.num_channels);
+            //     printf("A2DP Source: Received LDAC configuration! Sampling frequency: %d, channel mode: %d channels: %d\n",
+            //             ldac_configuration.sampling_frequency, ldac_configuration.channel_mode, ldac_configuration.num_channels);
 
-                handleLDAC = ldacBT_get_handle();
-                if (handleLDAC == NULL) {
-                    printf("Failed to get LDAC handle\n");
-                    break;
-                }
+            //     handleLDAC = ldacBT_get_handle();
+            //     if (handleLDAC == NULL) {
+            //         printf("Failed to get LDAC handle\n");
+            //         break;
+            //     }
 
-                // init ldac encoder
-                int mtu = 679; // minimal required mtu
-                if (ldacBT_init_handle_encode(handleLDAC, mtu, LDACBT_EQMID_SQ, ldac_configuration.channel_mode,
-                            LDACBT_SMPL_FMT_S16, ldac_configuration.sampling_frequency) == -1) {
-                    printf("Couldn't initialize LDAC encoder: %d\n", ldacBT_get_error_code(handleLDAC));
-                    break;
-                }
-                // HQ 909kbps -> audio_timer_interval = 1 
-                // SQ 606kbps -> audio_timer_interval <= 5
-                // MQ 303kbps -> audio_timer_interval <= 10
-                audio_timer_interval = 1;
-                current_sample_rate = ldac_configuration.sampling_frequency;
-                printf("current LDAC sampling rate is %d \n", current_sample_rate);
+            //     // init ldac encoder
+            //     int mtu = 679; // minimal required mtu
+            //     if (ldacBT_init_handle_encode(handleLDAC, mtu, LDACBT_EQMID_SQ, ldac_configuration.channel_mode,
+            //                 LDACBT_SMPL_FMT_S16, ldac_configuration.sampling_frequency) == -1) {
+            //         printf("Couldn't initialize LDAC encoder: %d\n", ldacBT_get_error_code(handleLDAC));
+            //         break;
+            //     }
+            //     // HQ -> audio_timer_interval = 1
+            //     // SQ -> audio_timer_interval <= 5
+            //     // MQ -> audio_timer_interval <= 10
+            //     audio_timer_interval = 3;
+            //     current_sample_rate = ldac_configuration.sampling_frequency;
+            //     printf("current LDAC sampling rate is %d \n", current_sample_rate);
 
-                avdtp_source_open_stream(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid);
+            //     avdtp_source_open_stream(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid);
 
-            } else {
+            // } 
+            
+            // else 
+            {
                 printf("Config not handled for %s\n", codec_name_for_type(remote_seps[selected_remote_sep_index].sep.capabilities.media_codec.media_codec_type));
             }
             break;
@@ -961,7 +1320,6 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             break;
     }
 }
-
 #ifdef HAVE_BTSTACK_STDIN
 
 static void show_usage(void){
@@ -1128,7 +1486,7 @@ static void stdin_process(char cmd){
 
         case 'l':
             printf("Setting Up  ldac\n");
-            status = set_ldac_configuration();
+            status = setup_aac_configuration();
             break;
 
         case 'v':
@@ -1229,69 +1587,36 @@ static int setup_sbc_configuration(){
     return status;
 }
 
-static int set_ldac_configuration(){
-    uint8_t  ladc_num = 0;
-    if (num_remote_seps == 0){
-        printf("Remote Stream Endpoints not discovered yet, please discover stream endpoints first\n");
-        return -1;
-    }
+
+static int setup_aac_configuration(){
+
+    uint8_t  aac_num = 0;
     for (int i = 0; i < num_remote_seps; i++){
-        if (remote_seps[i].vendor_id == A2DP_CODEC_VENDOR_ID_SONY && remote_seps[i].codec_id == A2DP_SONY_CODEC_LDAC){
-            printf("found LDAC!!! Remote Stream Endpoints ID is %d\n", i);
+        if ( remote_seps[i].sep.capabilities.media_codec.media_codec_type == AVDTP_CODEC_MPEG_2_4_AAC){
+            printf("found aac!!! Remote Stream Endpoints ID is %d\n", i);
             selected_remote_sep_index = i;
-            ladc_num = i;
+            aac_num = i;
             break;
         }
     }
 
-    if (ladc_num == 0){
-        printf("not found LDAC!!!\n");
-        return -1;
-    }
-
-    avdtp_media_codec_type_t codec_type = remote_seps[ladc_num].sep.capabilities.media_codec.media_codec_type;
-    if (codec_type == AVDTP_CODEC_NON_A2DP) {
-        const uint8_t * packet = remote_seps[ladc_num].media_codec_event;
-        const uint8_t *media_info = a2dp_subevent_signaling_media_codec_other_capability_get_media_codec_information(packet);
-    } else {
-        printf("LDAC codec unmatch!!!\n");
-        return -1;
-    }
-
-    // - LDAC endpoint
-    stream_endpoint_ldac = a2dp_source_create_stream_endpoint(AVDTP_AUDIO, AVDTP_CODEC_NON_A2DP, (uint8_t *) media_ldac_codec_capabilities, sizeof(media_ldac_codec_capabilities), (uint8_t*) local_stream_endpoint_ldac_media_codec_configuration, sizeof(local_stream_endpoint_ldac_media_codec_configuration));
-    btstack_assert(stream_endpoint_ldac != NULL);
-    stream_endpoint_ldac->media_codec_configuration_info = local_stream_endpoint_ldac_media_codec_configuration;
-    stream_endpoint_ldac->media_codec_configuration_len  = sizeof(local_stream_endpoint_ldac_media_codec_configuration);
-    avdtp_source_register_delay_reporting_category(avdtp_local_seid(stream_endpoint_ldac));
-
-    sc.local_stream_endpoint = stream_endpoint_ldac;
+    // set up local stream_endpoint; need change
+    sc.local_stream_endpoint = stream_endpoint_aac;
 
     // store local seid
     media_tracker.local_seid  = avdtp_local_seid(sc.local_stream_endpoint);
-    media_tracker.remote_seid = remote_seps[ladc_num].sep.seid;
+    media_tracker.remote_seid = remote_seps[aac_num].sep.seid;
 
-    // set media configuration
-    sc.local_stream_endpoint->remote_configuration_bitmap = store_bit16(sc.local_stream_endpoint->remote_configuration_bitmap, AVDTP_MEDIA_CODEC, 1);
-    sc.local_stream_endpoint->remote_configuration.media_codec.media_type = AVDTP_AUDIO;
-    sc.local_stream_endpoint->remote_configuration.media_codec.media_codec_type = codec_type;
+    // setup MPEG AAC configuration (MPEG 2 LC, 44.1 kHz, 2 channels, 300 kbps, no vbr)
+    avdtp_configuration_mpeg_aac_t configuration;
+    configuration.object_type = AVDTP_AAC_MPEG2_LC;
+    configuration.sampling_frequency = 44100;
+    configuration.channels = 2;
+    configuration.bit_rate = 300000;
+    configuration.vbr = 0;
+    avdtp_config_mpeg_aac_store(media_codec_config_data, &configuration);
+    media_codec_config_len = 6;
 
-    media_codec_config_data[0] = 0x2D;
-    media_codec_config_data[1] = 0x1;
-    media_codec_config_data[2] = 0x0;
-    media_codec_config_data[3] = 0x0;  // A2DP_LDAC_VENDOR_ID 0x0000012D
-
-    media_codec_config_data[4] = 0xAA;
-    media_codec_config_data[5] = 0x0;  // A2DP_LDAC_CODEC_ID 0x00AA
-
-    media_codec_config_data[6] = 0x20; // A2DP_LDAC_SAMPLING_FREQ_44100
-
-    media_codec_config_data[7] = 0x01; // A2DP_LDAC_CHANNEL_MODE_STEREO
-
-    media_codec_config_data[8] = 0x0;
-    media_codec_config_data[9] = 0x0;
-
-    media_codec_config_len = 10;
 
     avdtp_capabilities_t new_configuration;
     new_configuration.media_codec.media_type = AVDTP_AUDIO;
@@ -1299,10 +1624,84 @@ static int set_ldac_configuration(){
     new_configuration.media_codec.media_codec_information_len = media_codec_config_len;
     new_configuration.media_codec.media_codec_information = media_codec_config_data;
     int status = avdtp_source_set_configuration(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid, 1 << AVDTP_MEDIA_CODEC, new_configuration);
-
-    printf("Set LADC Connection Result is %d\n", status);
     return status;
 }
+
+
+// static int set_ldac_configuration(){
+//     uint8_t  ladc_num = 0;
+//     if (num_remote_seps == 0){
+//         printf("Remote Stream Endpoints not discovered yet, please discover stream endpoints first\n");
+//         return -1;
+//     }
+//     for (int i = 0; i < num_remote_seps; i++){
+//         if (remote_seps[i].vendor_id == A2DP_CODEC_VENDOR_ID_SONY && remote_seps[i].codec_id == A2DP_SONY_CODEC_LDAC){
+//             printf("found LDAC!!! Remote Stream Endpoints ID is %d\n", i);
+//             selected_remote_sep_index = i;
+//             ladc_num = i;
+//             break;
+//         }
+//     }
+
+//     if (ladc_num == 0){
+//         printf("not found LDAC!!!\n");
+//         return -1;
+//     }
+
+//     avdtp_media_codec_type_t codec_type = remote_seps[ladc_num].sep.capabilities.media_codec.media_codec_type;
+//     if (codec_type == AVDTP_CODEC_NON_A2DP) {
+//         const uint8_t * packet = remote_seps[ladc_num].media_codec_event;
+//         const uint8_t *media_info = a2dp_subevent_signaling_media_codec_other_capability_get_media_codec_information(packet);
+//     } else {
+//         printf("LDAC codec unmatch!!!\n");
+//         return -1;
+//     }
+
+//     // - LDAC endpoint
+//     stream_endpoint_ldac = a2dp_source_create_stream_endpoint(AVDTP_AUDIO, AVDTP_CODEC_NON_A2DP, (uint8_t *) media_ldac_codec_capabilities, sizeof(media_ldac_codec_capabilities), (uint8_t*) local_stream_endpoint_ldac_media_codec_configuration, sizeof(local_stream_endpoint_ldac_media_codec_configuration));
+//     btstack_assert(stream_endpoint_ldac != NULL);
+//     stream_endpoint_ldac->media_codec_configuration_info = local_stream_endpoint_ldac_media_codec_configuration;
+//     stream_endpoint_ldac->media_codec_configuration_len  = sizeof(local_stream_endpoint_ldac_media_codec_configuration);
+//     avdtp_source_register_delay_reporting_category(avdtp_local_seid(stream_endpoint_ldac));
+
+//     sc.local_stream_endpoint = stream_endpoint_ldac;
+
+//     // store local seid
+//     media_tracker.local_seid  = avdtp_local_seid(sc.local_stream_endpoint);
+//     media_tracker.remote_seid = remote_seps[ladc_num].sep.seid;
+
+//     // set media configuration
+//     sc.local_stream_endpoint->remote_configuration_bitmap = store_bit16(sc.local_stream_endpoint->remote_configuration_bitmap, AVDTP_MEDIA_CODEC, 1);
+//     sc.local_stream_endpoint->remote_configuration.media_codec.media_type = AVDTP_AUDIO;
+//     sc.local_stream_endpoint->remote_configuration.media_codec.media_codec_type = codec_type;
+
+//     media_codec_config_data[0] = 0x2D;
+//     media_codec_config_data[1] = 0x1;
+//     media_codec_config_data[2] = 0x0;
+//     media_codec_config_data[3] = 0x0;  // A2DP_LDAC_VENDOR_ID 0x0000012D
+
+//     media_codec_config_data[4] = 0xAA;
+//     media_codec_config_data[5] = 0x0;  // A2DP_LDAC_CODEC_ID 0x00AA
+
+//     media_codec_config_data[6] = 0x20; // A2DP_LDAC_SAMPLING_FREQ_44100
+
+//     media_codec_config_data[7] = 0x01; // A2DP_LDAC_CHANNEL_MODE_STEREO
+
+//     media_codec_config_data[8] = 0x0;
+//     media_codec_config_data[9] = 0x0;
+
+//     media_codec_config_len = 10;
+
+//     avdtp_capabilities_t new_configuration;
+//     new_configuration.media_codec.media_type = AVDTP_AUDIO;
+//     new_configuration.media_codec.media_codec_type = remote_seps[selected_remote_sep_index].sep.capabilities.media_codec.media_codec_type ;
+//     new_configuration.media_codec.media_codec_information_len = media_codec_config_len;
+//     new_configuration.media_codec.media_codec_information = media_codec_config_data;
+//     int status = avdtp_source_set_configuration(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid, 1 << AVDTP_MEDIA_CODEC, new_configuration);
+
+//     printf("Set LADC Connection Result is %d\n", status);
+//     return status;
+// }
 
 
 
@@ -1330,8 +1729,9 @@ void avdtp_source_establish_stream(){
 
 int set_next_codec(uint8_t num){
     switch (num){
-        case 0: // LDAC
-            return set_ldac_configuration();
+        case 0: // LDAC // aac
+            //return set_ldac_configuration();
+            return setup_aac_configuration();
         case 1: // sbc
             return setup_sbc_configuration();
         default:
@@ -1348,7 +1748,7 @@ void set_next_capablity_and_start_stream(){
         return;
     }
 
-    sleep_ms(200);
+    //sleep_ms(200);
 
     int result = set_next_codec(cur_capability);
 
@@ -1577,6 +1977,17 @@ int btstack_main(int argc, const char * argv[]){
     uint16_t controller_supported_features = AVRCP_FEATURE_MASK_CATEGORY_MONITOR_OR_AMPLIFIER;
     avrcp_controller_create_sdp_record(sdp_avrcp_controller_service_buffer, 0x10003, controller_supported_features, NULL, NULL);
     sdp_register_service(sdp_avrcp_controller_service_buffer);
+
+
+    #ifdef HAVE_AAC_FDK
+    // - AAC
+    stream_endpoint_aac = a2dp_source_create_stream_endpoint(AVDTP_AUDIO, AVDTP_CODEC_MPEG_2_4_AAC, (uint8_t *) media_aac_codec_capabilities, sizeof(media_aac_codec_capabilities), (uint8_t*) local_stream_endpoint_aac_media_codec_configuration, sizeof(local_stream_endpoint_aac_media_codec_configuration));
+    btstack_assert(stream_endpoint_aac != NULL);
+    stream_endpoint_aac->media_codec_configuration_info = local_stream_endpoint_aac_media_codec_configuration;
+    stream_endpoint_aac->media_codec_configuration_len  = sizeof(local_stream_endpoint_aac_media_codec_configuration);
+    avdtp_source_register_delay_reporting_category(avdtp_local_seid(stream_endpoint_aac));
+    #endif
+
 
 
     bt_hci_init();
