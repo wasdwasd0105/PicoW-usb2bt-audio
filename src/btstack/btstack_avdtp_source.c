@@ -456,6 +456,11 @@ static int shared_audio_counter = 0;
 static uint16_t usb_audio_buf_counter = 0;
 static int16_t * shared_audio_ptr;
 static bool is_usb_streaming = false;
+static uint16_t cur_codec_buf_len = 256;
+
+uint16_t get_cur_codec_buf_len(){
+    return cur_codec_buf_len;
+}
 
 void set_usb_buf_counter(uint16_t counter){
     usb_audio_buf_counter = counter;
@@ -901,7 +906,9 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             a2dp_is_connected_flag = true;
 
             printf("Streaming connection established, avdtp_cid 0x%02x\n", avdtp_cid);
+
             avdtp_source_start_stream(media_tracker.avdtp_cid, media_tracker.local_seid);
+            avrcp_connect((uint8_t *) get_device_addr(), &media_tracker.avrcp_cid);
             break;
 
         case AVDTP_SUBEVENT_SIGNALING_SEP_FOUND:
@@ -1129,6 +1136,8 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
             audio_timer_interval = 10;
 
+            cur_codec_buf_len = btstack_sbc_encoder_num_audio_frames();
+
             avdtp_source_open_stream(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid);
             break;
         }
@@ -1212,6 +1221,13 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             }
             current_sample_rate = aac_configuration.sampling_frequency;
             printf("AAC setup complete\n", err);
+
+            cur_codec_buf_len = aacinf.frameLength;
+
+            audio_timer_interval = 3;
+
+            avdtp_source_open_stream(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid);
+
             break;
         }
 
@@ -1753,8 +1769,8 @@ int set_next_codec(uint8_t num){
     switch (num){
         case 0: // LDAC // aac
             //return set_ldac_configuration();
-            //return setup_aac_configuration();
-            return setup_sbc_configuration();
+            return setup_aac_configuration();
+            //return setup_sbc_configuration();
 
         case 1: // sbc
             return setup_sbc_configuration();

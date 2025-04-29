@@ -5,7 +5,7 @@
 #ifndef PICOW_USB_BT_AUDIO_SSP_COUNTER_H
 #define PICOW_USB_BT_AUDIO_SSP_COUNTER_H
 
-#define AUDIO_BUF_POOL_LEN 10240
+#define AUDIO_BUF_POOL_LEN 6144
 
 int get_bt_buf_counter();
 
@@ -24,6 +24,8 @@ bool get_bt_mute();
 void set_usb_streaming(bool flag);
 
 bool * get_is_bt_sink_volume_changed_ptr();
+
+uint16_t get_cur_codec_buf_len();
 
 int btstack_main(int argc, const char * argv[]);
 
