@@ -48,12 +48,6 @@ pico_sdk_init()
 set(FDK_DIR ${CMAKE_CURRENT_LIST_DIR}/3rd-party/fdk-aac)
 set(FDK_BUILD_DIR ${CMAKE_BINARY_DIR}/fdk-aac)
 
-# set(BUILD_SHARED_LIBS        OFF  CACHE BOOL "" FORCE)
-# set(FDK_DECODER              OFF  CACHE BOOL "" FORCE)   # <-- turn decoder off
-# set(FDK_ENCODE_ONLY          ON   CACHE BOOL "" FORCE)
-# set(FDK_SIMD                 OFF  CACHE BOOL "" FORCE)   # no NEON/SIMD
-# set(FDK_ASM_OPT              0    CACHE STRING "" FORCE) # pure C
-
 
 add_subdirectory(${FDK_DIR} ${FDK_BUILD_DIR})
 target_compile_definitions(fdk-aac PUBLIC FDK_ARM_ARCH)
@@ -107,8 +101,6 @@ target_compile_definitions(PicoW_USB_BT_Audio PRIVATE
     CYW43_LWIP=0
     PICO_FLASH_ASSUME_CORE1_SAFE=1
     
-    FDK_ARM_ARCH
-
     # must enable on rp2040 & 330kbps(MQ)
     #LDAC_SOFT_FLOAT=OFF
 )

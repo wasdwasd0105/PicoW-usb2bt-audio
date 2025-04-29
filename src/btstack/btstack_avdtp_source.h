@@ -5,7 +5,7 @@
 #ifndef PICOW_USB_BT_AUDIO_SSP_COUNTER_H
 #define PICOW_USB_BT_AUDIO_SSP_COUNTER_H
 
-#define AUDIO_BUF_POOL_LEN 5120
+#define AUDIO_BUF_POOL_LEN 10240
 
 int get_bt_buf_counter();
 
