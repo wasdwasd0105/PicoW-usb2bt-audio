@@ -47,11 +47,9 @@ static int setup_aac_configuration();
 
 static int setup_sbc_configuration();
 
-static int setup_aptx_configuration();
-
-static int setup_aptx_hd_configuration();
 static int set_ldac_configuration();
 
+bool get_allow_switch_slot();
 
 
 #endif //PICOW_USB_BT_AUDIO_SSP_COUNTER_H

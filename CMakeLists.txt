@@ -41,7 +41,7 @@ pico_sdk_init()
 
 
 #LDAC https://github.com/EHfive/ldacBT
-#add_subdirectory(3rd-party/ldacBT)
+add_subdirectory(3rd-party/ldacBT)
 
 
 # FDK-AAC (encoder only)
@@ -75,8 +75,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-        #3rd-party/ldacBT/libldac/inc
-        #3rd-party/ldacBT/libldac/abr/inc
+        3rd-party/ldacBT/libldac/inc
+        3rd-party/ldacBT/libldac/abr/inc
         3rd-party/fdk-aac
 )
 
@@ -93,8 +93,8 @@ pico_multicore
 tinyusb_device
 tinyusb_board
 fdk-aac
-#ldacBT_enc
-#ldacBT_abr
+ldacBT_enc
+ldacBT_abr
 )
 
 target_compile_definitions(PicoW_USB_BT_Audio PRIVATE

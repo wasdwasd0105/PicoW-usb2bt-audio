@@ -6,10 +6,13 @@
 #include "btstack/btstack_hci.h"
 
 #include <stdio.h>
+#include "pico/stdlib.h"
+
 #include "pico/multicore.h"
 
 #include "btstack_event.h"
 
+#include "hardware/flash.h"
 #include "hardware/gpio.h"
 #include "hardware/sync.h"
 #include "hardware/structs/ioqspi.h"
@@ -17,6 +20,9 @@
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
 #include "hardware/timer.h"
+#include "hardware/structs/ioqspi.h"
+#include "hardware/structs/sio.h"
+#include "hardware/watchdog.h"
 
 #include "tinyusb/uac.h"
 #include "pico_w_led.h"
@@ -58,56 +64,98 @@ bool __no_inline_not_in_flash_func(get_bootsel_button)() {
     return button_state;
 }
 
-
-// by wasdwasd0105
-
-int bootsel_state_counter = 0;
-
-void check_bootsel_state(){
-    bool current_state = get_bootsel_button();
-
-    if(current_state){
-        bootsel_state_counter++;
+void on_single_press(void){
+    printf("key pressed short (single tap)!\n");
+    if (! get_a2dp_connected_flag()) {
+        a2dp_source_reconnect();
+    } else {
+        // next short-press action
     }
-    else{
+}
 
-        if(bootsel_state_counter > 50){
-            printf("key prassed long!\n");
-            avdtp_disconnect_and_scan();
-        }
+void on_double_press(void){
+    if(!get_allow_switch_slot()){
+        return;
+    }
+    uint8_t currect_slot = read_uint8_last_flash();
+    if (currect_slot == 0x1){
+        printf("switch to slot 2!\n");
+        set_led_mode_off();
+        set_led_mode_triple_blink();
+        write_uint8_last_flash(0x2);
+    } else{
+        printf("switch to slot 1!\n");
+        set_led_mode_off();
+        set_led_mode_double_blink();
+        write_uint8_last_flash(0x1);
+    }
+    get_link_keys();
+    printf("key pressed double!\n");
+}
 
-        else if (bootsel_state_counter > 5){
-            printf("key prassed short!\n");
-            if (get_a2dp_connected_flag() == false){
-                a2dp_source_reconnect();
-            }else{
-                //set_next_capablity_and_start_stream();
+void on_long_press(void){
+    printf("key pressed long!\n");
+    avdtp_disconnect_and_scan();
+}
+
+// ---------- parameters ----------
+#define DEBOUNCE_US          5000          // 5 ms
+#define SHORT_PRESS_MIN_US  100000         // 100 ms
+#define LONG_PRESS_MIN_US  1000000         // 1  s
+#define DOUBLE_WINDOW_US    500000         // 500 ms
+
+// ---------- state ----------
+static bool     debounced_state  = false;   // last stable level
+static uint64_t last_edge_us     = 0;       // last time level changed
+static uint64_t press_start_us   = 0;       // when current press began
+static uint64_t last_release_us  = 0;       // when previous press ended
+static uint8_t  tap_counter      = 0;
+
+// call every 1 ms
+void check_bootsel_state(void)
+{
+    bool raw = get_bootsel_button();            // true == pressed
+    uint64_t now = time_us_64();
+
+    // --- debounce ---
+    if (raw != debounced_state) {
+        if (now - last_edge_us >= DEBOUNCE_US) {
+            debounced_state = raw;
+            last_edge_us = now;
+
+            if (debounced_state) {              // -------- press --------
+                press_start_us = now;
+            } else {                            // -------- release ------
+                uint64_t press_len = now - press_start_us;
+
+                // classify type of this press
+                if (press_len >= LONG_PRESS_MIN_US) {
+                    on_long_press();
+                    tap_counter = 0;            // long press stands alone
+                } else if (press_len >= SHORT_PRESS_MIN_US) {
+                    tap_counter++;
+                    if (tap_counter == 1) {
+                        last_release_us = now;  // start double-tap window
+                    } else if (tap_counter == 2 &&
+                               (now - last_release_us) <= DOUBLE_WINDOW_US) {
+                        on_double_press();
+                        tap_counter = 0;
+                    }
+                }
             }
-
         }
-        bootsel_state_counter = 0;
     }
 
-}
-
-static btstack_packet_callback_registration_t hci_event_callback_registration;
-
-
-static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
-    UNUSED(size);
-    UNUSED(channel);
-    bd_addr_t local_addr;
-    if (packet_type != HCI_EVENT_PACKET) return;
-    switch(hci_event_packet_get_type(packet)){
-        case BTSTACK_EVENT_STATE:
-            if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) return;
-            gap_local_bd_addr(local_addr);
-            printf("BTstack up and running on %s.\n", bd_addr_to_str(local_addr));
-            break;
-        default:
-            break;
+    // timeout: single tap
+    if (tap_counter == 1 && (now - last_release_us) > DOUBLE_WINDOW_US) {
+        on_single_press();
+        tap_counter = 0;
     }
 }
+
+
+
+
 
 
 bool usb_timer_callback(repeating_timer_t *rt){
@@ -115,6 +163,11 @@ bool usb_timer_callback(repeating_timer_t *rt){
     return true;
 }
 
+bool bootsel_timer_callback(repeating_timer_t *rt) {
+    (void)rt;
+    check_bootsel_state();
+    return true;    // keep repeating
+}
 
 int main() {
 
@@ -128,6 +181,16 @@ int main() {
 
     flash_safe_execute_core_init();
 
+    uint8_t currect_slot = read_uint8_last_flash();
+
+    printf("init slot is %d\n", currect_slot);
+
+    if (currect_slot != 0x1 && currect_slot != 0x2){
+        printf("Doesn't has slot, set the slot to 1\n");
+        write_uint8_last_flash(0x1);
+        currect_slot = read_uint8_last_flash();
+    }
+
     tinyusb_main();
 
     printf("init ctw43.\n");
@@ -140,23 +203,18 @@ int main() {
 
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 
-
-    // inform about BTstack state
-    hci_event_callback_registration.callback = &packet_handler;
-    hci_add_event_handler(&hci_event_callback_registration);
-
     btstack_main(0, NULL);
     sleep_ms(200);  
-    //bt_disconnect_and_scan();
     
     static repeating_timer_t usb_timer;
     add_repeating_timer_us(-30, usb_timer_callback, NULL, &usb_timer);
 
+    static repeating_timer_t bootsel_timer;
+    add_repeating_timer_us(20000, bootsel_timer_callback, NULL, &bootsel_timer);
+
     while (1) {
-        //printf("get_bootsel_button is %d\n", get_bootsel_button());
-        check_bootsel_state();
         tinyusb_control_task();
-        sleep_ms(20);
+        sleep_ms(50);
     }
 
 }

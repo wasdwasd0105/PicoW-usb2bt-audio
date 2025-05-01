@@ -14,7 +14,8 @@ void bt_hci_init(void);
 
 const char * get_device_addr_string();
 bd_addr_t * get_device_addr();
-
+bd_addr_t * get_device_addr_from_list(uint8_t i);
+void get_link_keys();
 
 
 #endif //PICOW_USB_BT_AUDIO_BTSTACK_HCI_H
