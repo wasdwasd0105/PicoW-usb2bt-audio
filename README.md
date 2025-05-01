@@ -4,8 +4,6 @@ It allows any device with a USB input, including MacOS, Windows, Linux, Nintendo
 With Pico W Adapter, you can easily transmit audio wirelessly from your USB audio source to your Bluetooth headphones or speaker, enhancing your listening experience.
 
 
-The Pro version is designed to stream audio with multiple codecs. Currently, it is under development and not very stable. If you don't need to stream the LDAC audio, you can use the regular version.  It is much more stable and easy to use.
-
 
 To make sure we can keep working on free and open-source projects like this,  
 **please consider becoming a [:heart: Sponsor via PayPal](https://www.paypal.com/donate/?business=UZAK3WFV233ML&no_recurring=0&item_name=Help+me+build+more+project%21&currency_code=USD) or support us via [:coffee: Ko-fi](https://ko-fi.com/wasdwasd0105).**
@@ -23,16 +21,13 @@ Setting up PicoW requires no driver or software installation. Simply plug the Pi
 Pico W Bluetooth Adapter utilizes multiple codecs to deliver high-quality audio. 
 
 #### LDAC
-The input is 16-bit 44100Hz PCM audio, and it can steam LDAC audio at 303(Mobile Quality) and 606(Standard Quality) Kbps. 303 is more stable than 606 Kbps. 
-
-#### APTX/ APTX HD
-Coming soon. Aptx connection have set up. However, the Pico W is not powerful enough to use [libopenaptx](https://github.com/pali/libopenaptx) to encode real-time audio. It will use 30ms to encode a 10ms audio. I will try some alternative projects or optimize the library.
+The input is 16-bit 44100Hz PCM audio, and it can steam LDAC audio at 303(Mobile Quality) on Pico W and 606(Standard Quality) Kbps/ 909 Kbps on Pico 2 W.
 
 #### AAC
-Will try fdk-aac, but not sure it can run
+Only work on Pico 2 W. The input is 16-bit 44100Hz PCM audio, and use fdk-acc to encode the aac.
 
 #### SBC
-Ready to use
+Ready to use: There is a [sbc only project](https://github.com/wasdwasd0105/PicoW-usb2bt-audio-sbc/) that can learn how btstack and tinyusb work on Pico W
 
 
 
@@ -61,7 +56,7 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
 1. **Connect your Pico W to your audio source device:** Use a USB cable to connect your Raspberry Pi Pico W to the device that you want to stream audio from.
 
-2. **Set the audio output on your source device:** On your audio source device, go to your sound settings and change the audio output device to `USB Bluetooth Audio`.
+2. **Set the audio output on your source device:** On your audio source device, go to your sound settings and change the audio output device to `TinyUSB BT`.
 
 3. **Pairing a new device:** To pair a new device, long press the 'BOOTSEL' button on the Pico W and release it the led light will blink fast. Then, put the new Bluetooth device into pairing mode. The Pico W will automatically connect to it.
 
@@ -69,8 +64,13 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
 5. **Reconnecting a device:** You can connect/reconnect the headphone by short pressing the 'BOOTSEL' button when it is not streaming audio (LED light not blinking)
 
-6. **Switch Codec:** While audio is streaming, you can short press the 'BOOTSEL' button to switch codec. You should need to press the key twice to switch the codec.
 7. If you press the key for times but it has no response. It means it is crash. Please reconnect the USB. 
+
+8. starting at v0.8 the program can remember 2 devices. When connected to USB the led will blink for 2 times fast for device A and 3 times fast for device B. 
+
+     Double press the 'BOOTSEL' button can switch the device A or B and led will blink 2/3 times correspond to A/B.
+
+     After any bluetooth connection, switching device will not be available until reconnect the USB
 
 
 
@@ -78,48 +78,41 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
 1. **Blinking Slow (1s):** When the Green LED light is blinking slow, it indicates that audio is currently streaming. Different LED light on time means different streaming mode:
 
-| LED on time | codec |
-|-------------|-------|
-| 0.2s        | LDAC  |
-| 1s          | SBC   |
+     | LED on time | codec |
+     |-------------|-------|
+     | 0.2s        | LDAC/AAC  |
+     | 1s          | SBC   |
 
 2. **Blinking Fast (0.5s):** It means that the PicoW Adapter is in pairing mode.
+
 3. **On (Steady Light):** It means that the PicoW Adapter is on standby. Short-press the key to reconnect the last saved device.
+
 
 
 ## Compile & Debug
 
 In order to compile the PicoW USB Audio to Bluetooth Adapter firmware from source code, you need to follow these steps:
 
-1. **Prepare your environment:** Make sure that you have a working development environment for Raspberry Pi Pico projects. This includes having the required compiler and tools installed. You may refer to the [Getting started with Raspberry Pi Pico](https://www.raspberrypi.org/documentation/rp2040/getting-started/) guide for detailed instructions.
+1. **Prepare your environment:** Use VS Code and Raspberry Pi Pico extension
 
-2. **Set environment variables:** Before you can build the project, you need to set two environment variables: `PICO_SDK_PATH` and `PICO_EXTRAS_PATH`. For example:
+2. **Import the project on the Raspberry Pi Pico extension:** Import the project using General -> Import Project
 
-```bash
-export PICO_SDK_PATH=~/pico-sdk
-export PICO_EXTRAS_PATH=~/pico-extras
-```
+Choose Pico W or Pico 2 W using Switch Board
 
-3. **Build the project:** After setting up your environment, navigate to the project directory in a terminal and run the provided build script:
+Then you can Debug, Compile and Run the project on the Project tab
 
-```bash
-./build.sh
-```
-
-This script should compile the project and produce a UF2 firmware file that you can flash onto your Pico W.
-
-4. **Debug Serial input/output:** You can use uart to see the debug info. Connect the GPIO 0 and 1 as TX and RX. To enable BTstack's serial input, you can uncomment `HAVE_BTSTACK_STDIN` under btstack_config.h
+3. **Debug Serial input/output:** You can use uart to see the debug info. Connect the GPIO 0 and 1 as TX and RX. To enable BTstack's serial input, you can uncomment `HAVE_BTSTACK_STDIN` under btstack_config.h
 
 
 ## Acknowledgments
 
 This project wouldn't have been possible without the foundational work provided by the following projects:
 
-1. [usb-sound-card](https://github.com/raspberrypi/pico-playground/tree/master/apps/usb_sound_card): It served as a valuable reference for handling USB audio data with the Raspberry Pi Pico.
+1. [tinyusb uac2_headset](https://github.com/hathach/tinyusb/tree/master/examples/device/uac2_headset): Tinyusb UAC2 headset demo
 
 2. [a2dp_source_demo](https://github.com/bluekitchen/btstack/blob/master/example/a2dp_source_demo.c): The Advanced Audio Distribution Profile (A2DP) source demo provided by the BTstack.
 
-3. [avdtp_source_test.c](https://github.com/bluekitchen/btstack/tree/v1.5.4/test/pts)
+3. [avdtp_source_test.c](https://github.com/bluekitchen/btstack/tree/v1.5.4/test/pts): The Audio tests (avdtp_source_test.c and avdtp_sink_test) support the folowing audio codecs: SBC, AAC, aptX, and LDAC.
 
 
 ## License
@@ -174,3 +167,5 @@ NOTICE
   limitations under the License.
 ```
 
+
+### FDK AAC: https://github.com/mstorsjo/fdk-aac
