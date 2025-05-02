@@ -154,10 +154,6 @@ void check_bootsel_state(void)
 }
 
 
-
-
-
-
 bool usb_timer_callback(repeating_timer_t *rt){
     tinyusb_task();
     return true;
@@ -207,7 +203,7 @@ int main() {
     sleep_ms(200);  
     
     static repeating_timer_t usb_timer;
-    add_repeating_timer_us(-30, usb_timer_callback, NULL, &usb_timer);
+    add_repeating_timer_us(-500, usb_timer_callback, NULL, &usb_timer);
 
     static repeating_timer_t bootsel_timer;
     add_repeating_timer_us(20000, bootsel_timer_callback, NULL, &bootsel_timer);

@@ -139,9 +139,10 @@
  }
  
 
- void tinyusb_control_task(void){
+void tinyusb_control_task(void){
+  //tud_task(); // TinyUSB device task
   audio_control_task();
-  }
+}
 
  //--------------------------------------------------------------------+
  // Device callbacks
@@ -392,7 +393,10 @@
  
    return true;
  }
- 
+
+ uint16_t usb_stop_delay = 0;
+ bool is_usb_audio_running = false;
+
  bool tud_audio_rx_done_pre_read_cb(uint8_t rhport, uint16_t n_bytes_received, uint8_t func_id, uint8_t ep_out, uint8_t cur_alt_setting)
  {
    (void)rhport;
@@ -401,28 +405,7 @@
    (void)cur_alt_setting;
  
    spk_data_size = tud_audio_read(spk_buf, n_bytes_received);
-   return true;
- }
- 
-//  bool tud_audio_tx_done_pre_load_cb(uint8_t rhport, uint8_t itf, uint8_t ep_in, uint8_t cur_alt_setting)
-//  {
-//    (void)rhport;
-//    (void)itf;
-//    (void)ep_in;
-//    (void)cur_alt_setting;
- 
-//    // This callback could be used to fill microphone data separately
-//    return true;
-//  }
- 
- //--------------------------------------------------------------------+
- // AUDIO Task
- //--------------------------------------------------------------------+
 
-uint16_t usb_stop_delay = 0;
-
- void audio_task(void)
- {
    if (spk_data_size)
    {
     usb_stop_delay = 0;
@@ -450,23 +433,42 @@ uint16_t usb_stop_delay = 0;
             audio_buffer_pool[buffer_counter++] = (int16_t)sample;
         }
 
-      // if (check_is_streaming()){
-      //   memset(audio_buffer_pool, 0, sizeof(audio_buffer_pool));
-      //   set_usb_buf_counter(0);
-      // }else{
-      //   set_usb_buf_counter(buffer_counter);
-      // }
-
       set_usb_buf_counter(buffer_counter);
-
+      is_usb_audio_running = true;
       spk_data_size = 0;
     }
-   } else{
+   } 
+
+   return true;
+ }
+ 
+//  bool tud_audio_tx_done_pre_load_cb(uint8_t rhport, uint8_t itf, uint8_t ep_in, uint8_t cur_alt_setting)
+//  {
+//    (void)rhport;
+//    (void)itf;
+//    (void)ep_in;
+//    (void)cur_alt_setting;
+ 
+//    // This callback could be used to fill microphone data separately
+//    return true;
+//  }
+ 
+ //--------------------------------------------------------------------+
+ // AUDIO Task
+ //--------------------------------------------------------------------+
+
+
+ void audio_task(void)
+ {
+  if (is_usb_audio_running){
+    usb_stop_delay = 0;
+  }else{
     usb_stop_delay++;
-    if (usb_stop_delay > 1000){
+    if (usb_stop_delay > 100){
       set_usb_streaming(false);
     }
-   }
+  }
+  is_usb_audio_running = false;
  }
  
 
