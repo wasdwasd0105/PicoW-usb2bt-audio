@@ -4,11 +4,6 @@ It allows any device with a USB input, including MacOS, Windows, Linux, Nintendo
 With Pico W Adapter, you can easily transmit audio wirelessly from your USB audio source to your Bluetooth headphones or speaker, enhancing your listening experience.
 
 
-
-To make sure we can keep working on free and open-source projects like this,  
-**please consider becoming a [:heart: Sponsor via PayPal](https://www.paypal.com/donate/?business=UZAK3WFV233ML&no_recurring=0&item_name=Help+me+build+more+project%21&currency_code=USD) or support us via [:coffee: Ko-fi](https://ko-fi.com/wasdwasd0105).**
-
-
 <p align="center">
 <img alt="Logo" src="logo.png" width="200">
 </p>
