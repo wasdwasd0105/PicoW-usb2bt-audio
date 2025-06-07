@@ -36,11 +36,10 @@
  *
  */
 
-#define BTSTACK_FILE__ "avdtp_source_test.c"
 
 /*
- * avdtp_source_test.c : Tool for testig AVDTP source with PTS, see avdtp_source_test.md and a2dp_source.md for PTS tests command sequences
- */
+ * 
+*/
 
 #include <stdint.h>
 #include <stdio.h>
@@ -107,36 +106,6 @@ typedef struct {
     int sampling_frequency;
 } avdtp_media_codec_configuration_ldac_t;
 
-// #define TABLE_SIZE_441HZ            100
-// static int sine_phase;
-
-
-// static const int16_t sine_int16[] = {
-//     0,    2057,    4107,    6140,    8149,   10126,   12062,   13952,   15786,   17557,
-// 19260,   20886,   22431,   23886,   25247,   26509,   27666,   28714,   29648,   30466,
-// 31163,   31738,   32187,   32509,   32702,   32767,   32702,   32509,   32187,   31738,
-// 31163,   30466,   29648,   28714,   27666,   26509,   25247,   23886,   22431,   20886,
-// 19260,   17557,   15786,   13952,   12062,   10126,    8149,    6140,    4107,    2057,
-//     0,   -2057,   -4107,   -6140,   -8149,  -10126,  -12062,  -13952,  -15786,  -17557,
-// -19260,  -20886,  -22431,  -23886,  -25247,  -26509,  -27666,  -28714,  -29648,  -30466,
-// -31163,  -31738,  -32187,  -32509,  -32702,  -32767,  -32702,  -32509,  -32187,  -31738,
-// -31163,  -30466,  -29648,  -28714,  -27666,  -26509,  -25247,  -23886,  -22431,  -20886,
-// -19260,  -17557,  -15786,  -13952,  -12062,  -10126,   -8149,   -6140,   -4107,   -2057,
-// };
-
-// static void produce_sine_audio(int16_t * pcm_buffer, int num_samples_to_write){
-//     int count;
-//     for (count = 0; count < num_samples_to_write ; count++){
-//         pcm_buffer[count * 2]     = sine_int16[sine_phase] >> VOLUME_REDUCTION;
-//         pcm_buffer[count * 2 + 1] = sine_int16[sine_phase] >> VOLUME_REDUCTION;
-//         sine_phase++;
-//         if (sine_phase >= TABLE_SIZE_441HZ){
-//             sine_phase -= TABLE_SIZE_441HZ;
-//         }
-//     }
-// }
-
-
 
 #ifdef HAVE_BTSTACK_STDIN
 
@@ -187,6 +156,7 @@ static uint16_t     cur_num_remote_seps;
 
 static uint8_t cur_capability = 0;
 static bool is_streaming = false;
+static uint8_t cur_codec = 0;
 
 static void avrcp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void avrcp_target_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
@@ -243,6 +213,9 @@ static bool a2dp_is_connected_flag = false;
 static bool finish_scan_avdtp_codec = false;
 
 static uint8_t audio_timer_interval = 5;
+
+static uint16_t acc_num_simples = 512;
+static int aac_bit_rate = 256000;
 
 
 static const uint8_t media_sbc_codec_capabilities[] = {
@@ -358,7 +331,9 @@ static void a2dp_demo_send_media_packet_aac(void) {
 
     a2dp_source_stream_send_media_payload_rtp(media_tracker.avdtp_cid, media_tracker.local_seid, 0, media_tracker.rtp_timestamp, &media_tracker.codec_storage[0], media_tracker.codec_storage_count);
 
-    media_tracker.rtp_timestamp += aacinf.frameLength;
+    //media_tracker.rtp_timestamp += aacinf.frameLength;
+    media_tracker.rtp_timestamp += acc_num_simples/2 + 125;
+
 
     media_tracker.codec_storage_count = 0;
     media_tracker.codec_ready_to_send = 0;
@@ -540,8 +515,9 @@ static int a2dp_demo_fill_ldac_audio_buffer(a2dp_media_sending_context_t *contex
 
 static int fill_aac_audio_buffer(a2dp_media_sending_context_t *context) {
     int          total_samples_read               = 0;
-    unsigned int num_audio_samples_per_aac_buffer = aacinf.frameLength;
+    //unsigned int num_audio_samples_per_aac_buffer = aacinf.frameLength;
 
+    unsigned int num_audio_samples_per_aac_buffer = acc_num_simples;
     //printf("current aac samples %d\n", num_audio_samples_per_aac_buffer);
 
     btstack_assert(num_audio_samples_per_aac_buffer <= 1024);
@@ -1036,7 +1012,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             printf("A2DP Source: Received AAC capabilities! Sampling frequency bitmap: 0x%04x, object type %u, channel mode %u, bitrate %u, vbr: %u\n",
                    aac_capabilities.sampling_frequency_bitmap, aac_capabilities.object_type_bitmap, aac_capabilities.channels_bitmap,
                    aac_capabilities.bit_rate, aac_capabilities.vbr);
-
+            aac_bit_rate = aac_capabilities.bit_rate;
             break;
         }
 
@@ -1128,6 +1104,8 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
             cur_codec_buf_len = btstack_sbc_encoder_num_audio_frames();
 
+            cur_codec = 1;
+
             avdtp_source_open_stream(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid);
             break;
         }
@@ -1157,8 +1135,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
            int aot = convert_aac_object_type(aac_configuration.object_type);
            int vbr = convert_aac_vbr(aac_configuration.vbr);
 
-           //aac_configuration.channels = 2;
-           //aac_configuration.bit_rate = 300000;
+           aac_configuration.bit_rate = aac_bit_rate;
 
             //init encoder
             AACENC_ERROR err;
@@ -1216,9 +1193,9 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             current_sample_rate = aac_configuration.sampling_frequency;
             printf("AAC setup complete\n", err);
 
-            cur_codec_buf_len = aacinf.frameLength;
+            audio_timer_interval = 10;
 
-            audio_timer_interval = 3;
+            cur_codec = 2;
 
             avdtp_source_open_stream(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid);
 
@@ -1258,8 +1235,8 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 }
 
                 // init ldac encoder
-                int mtu = 679; // minimal required mtu
-                if (ldacBT_init_handle_encode(handleLDAC, mtu, LDACBT_EQMID_SQ, ldac_configuration.channel_mode,
+                int mtu = 1536; // minimal required mtu
+                if (ldacBT_init_handle_encode(handleLDAC, mtu, LDACBT_EQMID_HQ, ldac_configuration.channel_mode,
                             LDACBT_SMPL_FMT_S16, ldac_configuration.sampling_frequency) == -1) {
                     printf("Couldn't initialize LDAC encoder: %d\n", ldacBT_get_error_code(handleLDAC));
                     break;
@@ -1267,9 +1244,11 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 // HQ -> audio_timer_interval = 1
                 // SQ -> audio_timer_interval <= 5
                 // MQ -> audio_timer_interval <= 10
-                audio_timer_interval = 2;
+                audio_timer_interval = 1;
                 current_sample_rate = ldac_configuration.sampling_frequency;
                 printf("current LDAC sampling rate is %d \n", current_sample_rate);
+
+                cur_codec = 3;
 
                 avdtp_source_open_stream(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid);
 
@@ -1515,7 +1494,7 @@ static void stdin_process(char cmd){
 
         case 'l':
             printf("Setting Up  ldac\n");
-            status = setup_aac_configuration();
+            status = set_ldac_configuration();
             break;
 
         case 'v':
@@ -1638,31 +1617,28 @@ static int setup_aac_configuration(){
         }
     }
 
-    // set up local stream_endpoint; need change
+    // set up local stream_endpoint;
     sc.local_stream_endpoint = stream_endpoint_aac;
 
     // store local seid
     media_tracker.local_seid  = avdtp_local_seid(sc.local_stream_endpoint);
     media_tracker.remote_seid = remote_seps[aac_num].sep.seid;
 
-    // setup MPEG AAC configuration (MPEG 2 LC, 44.1 kHz, 2 channels, 300 kbps, no vbr)
+    // setup MPEG AAC configuration
     avdtp_configuration_mpeg_aac_t configuration;
     configuration.object_type = 1;
     configuration.sampling_frequency = 44100;
     configuration.channels = 2;
-    configuration.bit_rate = 0;
+    configuration.bit_rate = aac_bit_rate;
     configuration.vbr = 1;
     avdtp_config_mpeg_aac_store(media_codec_config_data, &configuration);
-    //printf("0 is 0x%04x\n", media_codec_config_data[0]);
 
     media_codec_config_data[0] = 0x80;
-
     media_codec_config_len = 6;
-
 
     avdtp_capabilities_t new_configuration;
     new_configuration.media_codec.media_type = AVDTP_AUDIO;
-    new_configuration.media_codec.media_codec_type = remote_seps[selected_remote_sep_index].sep.capabilities.media_codec.media_codec_type ;
+    new_configuration.media_codec.media_codec_type =  2,    // Media Codec Type: A2DP_MEDIA_CT_AAC
     new_configuration.media_codec.media_codec_information_len = media_codec_config_len;
     new_configuration.media_codec.media_codec_information = media_codec_config_data;
     int status = avdtp_source_set_configuration(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid, 1 << AVDTP_MEDIA_CODEC, new_configuration);
@@ -1733,10 +1709,14 @@ static int set_ldac_configuration(){
 
     media_codec_config_data[7] = 0x01; // A2DP_LDAC_CHANNEL_MODE_STEREO
 
-    media_codec_config_data[8] = 0x0;
-    media_codec_config_data[9] = 0x0;
+    // Fixed. See 
+    // https://android.googlesource.com/platform/packages/modules/Bluetooth
+    // system/stack/test/a2dp/media_codec_capabilities_test.cc
+    // media_codec_config_data[8] = 0x0;
+    // media_codec_config_data[9] = 0x0;
 
-    media_codec_config_len = 10;
+    // not 10 
+    media_codec_config_len = 8;
 
     avdtp_capabilities_t new_configuration;
     new_configuration.media_codec.media_type = AVDTP_AUDIO;
@@ -1788,6 +1768,8 @@ void avdtp_source_establish_stream(){
 
 
 int set_next_codec(uint8_t num){
+    //return 0;
+    //return setup_sbc_configuration();
     switch (num){
         case 0: // LDAC // aac
             if (have_ldac_codec_capabilities){
@@ -1833,12 +1815,15 @@ void set_next_capablity_and_start_stream(){
 
 void start_led_blink(){
     set_led_mode_off();
-    switch ( cur_capability ) {
+    switch ( cur_codec ) {
         case 1:
-            set_led_mode_playing_ldac();
+            set_led_mode_playing_sbc();
             break;
         case 2:
-            set_led_mode_playing_sbc();
+            set_led_mode_playing_aac();
+            break;
+        case 3:
+            set_led_mode_playing_ldac();
             break;
         default:
             break;

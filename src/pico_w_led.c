@@ -57,10 +57,20 @@ void set_led_mode_playing_ldac(){
     led_on = true;
     led_short = true;
     is_repeating = true;
-    repeating_time_short = 1000;
-    repeating_time = 200;
+    repeating_time_short = 3000;
+    repeating_time = 1000;
     async_context_add_at_time_worker_in_ms(cyw43_arch_async_context(), &led_timeout, repeating_time);
 }
+
+void set_led_mode_playing_aac(){
+    led_on = true;
+    led_short = true;
+    is_repeating = true;
+    repeating_time_short = 200;
+    repeating_time = 1000;
+    async_context_add_at_time_worker_in_ms(cyw43_arch_async_context(), &led_timeout, repeating_time);
+}
+
 
 
 

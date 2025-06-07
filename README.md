@@ -75,7 +75,8 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
      | LED on time | codec |
      |-------------|-------|
-     | 0.2s        | LDAC/AAC  |
+     | 0.2s        | AAC   |
+     | 3s          | LDAC  |
      | 1s          | SBC   |
 
 2. **Blinking Fast (0.5s):** It means that the PicoW Adapter is in pairing mode.
