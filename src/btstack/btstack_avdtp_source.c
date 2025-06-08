@@ -214,8 +214,11 @@ static bool finish_scan_avdtp_codec = false;
 
 static uint8_t audio_timer_interval = 5;
 
-static uint16_t acc_num_simples = 512;
-static int aac_bit_rate = 256000;
+// on pico 2w the max stable aac bit rate under 1024 simples without vbr is around 220000
+static uint8_t aac_audio_timer_interval = 6;
+static uint16_t acc_num_simples = 1024;
+static int max_aac_bit_rate = 220000;
+static int aac_bit_rate = 220000;
 
 
 static const uint8_t media_sbc_codec_capabilities[] = {
@@ -332,8 +335,7 @@ static void a2dp_demo_send_media_packet_aac(void) {
     a2dp_source_stream_send_media_payload_rtp(media_tracker.avdtp_cid, media_tracker.local_seid, 0, media_tracker.rtp_timestamp, &media_tracker.codec_storage[0], media_tracker.codec_storage_count);
 
     //media_tracker.rtp_timestamp += aacinf.frameLength;
-    media_tracker.rtp_timestamp += acc_num_simples/2 + 125;
-
+    media_tracker.rtp_timestamp += acc_num_simples;
 
     media_tracker.codec_storage_count = 0;
     media_tracker.codec_ready_to_send = 0;
@@ -515,13 +517,12 @@ static int a2dp_demo_fill_ldac_audio_buffer(a2dp_media_sending_context_t *contex
 
 static int fill_aac_audio_buffer(a2dp_media_sending_context_t *context) {
     int          total_samples_read               = 0;
-    //unsigned int num_audio_samples_per_aac_buffer = aacinf.frameLength;
 
     unsigned int num_audio_samples_per_aac_buffer = acc_num_simples;
     //printf("current aac samples %d\n", num_audio_samples_per_aac_buffer);
 
     btstack_assert(num_audio_samples_per_aac_buffer <= 1024);
-    //int16_t  pcm_frame[2048];
+
     unsigned required_bytes = num_audio_samples_per_aac_buffer * aacinf.inputChannels;
 
     if (!is_usb_streaming){
@@ -1133,9 +1134,19 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                    aac_configuration.bit_rate, aac_configuration.vbr);
 
            int aot = convert_aac_object_type(aac_configuration.object_type);
-           int vbr = convert_aac_vbr(aac_configuration.vbr);
 
-           aac_configuration.bit_rate = aac_bit_rate;
+           //int vbr = convert_aac_vbr(aac_configuration.vbr);
+
+           int vbr = 0;
+
+           //aac_configuration.bit_rate = aac_bit_rate;
+
+            if (aac_bit_rate > max_aac_bit_rate){
+                aac_configuration.bit_rate = max_aac_bit_rate;
+            }else{
+                aac_configuration.bit_rate = aac_bit_rate;
+            }
+
 
             //init encoder
             AACENC_ERROR err;
@@ -1193,7 +1204,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             current_sample_rate = aac_configuration.sampling_frequency;
             printf("AAC setup complete\n", err);
 
-            audio_timer_interval = 10;
+            audio_timer_interval = aac_audio_timer_interval;
 
             cur_codec = 2;
 
@@ -1236,7 +1247,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
                 // init ldac encoder
                 int mtu = 1536; // minimal required mtu
-                if (ldacBT_init_handle_encode(handleLDAC, mtu, LDACBT_EQMID_HQ, ldac_configuration.channel_mode,
+                if (ldacBT_init_handle_encode(handleLDAC, mtu, LDACBT_EQMID_SQ, ldac_configuration.channel_mode,
                             LDACBT_SMPL_FMT_S16, ldac_configuration.sampling_frequency) == -1) {
                     printf("Couldn't initialize LDAC encoder: %d\n", ldacBT_get_error_code(handleLDAC));
                     break;
@@ -1629,8 +1640,16 @@ static int setup_aac_configuration(){
     configuration.object_type = 1;
     configuration.sampling_frequency = 44100;
     configuration.channels = 2;
-    configuration.bit_rate = aac_bit_rate;
-    configuration.vbr = 1;
+
+    if (aac_bit_rate > max_aac_bit_rate){
+        configuration.bit_rate = max_aac_bit_rate;
+    }else{
+        configuration.bit_rate = aac_bit_rate;
+    }
+
+    //disable vbr, it will cause unstable 
+    configuration.vbr = 0;
+    
     avdtp_config_mpeg_aac_store(media_codec_config_data, &configuration);
 
     media_codec_config_data[0] = 0x80;
