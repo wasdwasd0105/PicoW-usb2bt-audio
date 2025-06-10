@@ -214,11 +214,11 @@ static bool finish_scan_avdtp_codec = false;
 
 static uint8_t audio_timer_interval = 5;
 
-// on pico 2w the max stable aac bit rate under 1024 simples without vbr is around 220000
-static uint8_t aac_audio_timer_interval = 6;
+// on pico 2w the max stable aac bit rate under 512 simples without vbr is around 220000
+static uint8_t aac_audio_timer_interval = 5;
 static uint16_t acc_num_simples = 1024;
-static int max_aac_bit_rate = 220000;
-static int aac_bit_rate = 220000;
+static int max_aac_bit_rate = 168000;
+static int aac_bit_rate = 192000;
 
 
 static const uint8_t media_sbc_codec_capabilities[] = {
@@ -1641,11 +1641,14 @@ static int setup_aac_configuration(){
     configuration.sampling_frequency = 44100;
     configuration.channels = 2;
 
-    if (aac_bit_rate > max_aac_bit_rate){
-        configuration.bit_rate = max_aac_bit_rate;
-    }else{
-        configuration.bit_rate = aac_bit_rate;
-    }
+    // if (aac_bit_rate > max_aac_bit_rate){
+    //     configuration.bit_rate = max_aac_bit_rate;
+    // }else{
+    //     configuration.bit_rate = aac_bit_rate;
+    // }
+
+    configuration.bit_rate = aac_bit_rate;
+
 
     //disable vbr, it will cause unstable 
     configuration.vbr = 0;
