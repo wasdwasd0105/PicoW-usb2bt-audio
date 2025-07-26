@@ -51,5 +51,8 @@ static int set_ldac_configuration();
 
 bool get_allow_switch_slot();
 
+void increase_vol_by_key();
+
+void decrease_vol_by_key();
 
 #endif //PICOW_USB_BT_AUDIO_SSP_COUNTER_H

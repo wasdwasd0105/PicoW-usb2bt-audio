@@ -217,7 +217,7 @@ static uint8_t audio_timer_interval = 5;
 // on pico 2w the max stable aac bit rate under 512 simples without vbr is around 220000
 static uint8_t aac_audio_timer_interval = 5;
 static uint16_t acc_num_simples = 1024;
-static int max_aac_bit_rate = 168000;
+static int max_aac_bit_rate = 192000;
 static int aac_bit_rate = 192000;
 
 
@@ -1339,6 +1339,30 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             break;
     }
 }
+
+void increase_vol_by_key(){
+    if (media_tracker.volume > 117){
+         media_tracker.volume = 127;
+    } else {
+                media_tracker.volume += 10;
+    }
+    printf(" - volume up (via set absolute volume) %d%% (%d)\n",  media_tracker.volume * 100 / 127,  media_tracker.volume);
+    avrcp_controller_set_absolute_volume(media_tracker.avrcp_cid, media_tracker.volume);
+}
+
+
+void decrease_vol_by_key(){
+
+    if (media_tracker.volume < 10){
+        media_tracker.volume = 0;
+    } else {
+        media_tracker.volume -= 10;
+    }
+    printf(" - volume down (via set absolute volume) %d%% (%d)\n",  media_tracker.volume * 100 / 127,  media_tracker.volume);
+    avrcp_controller_set_absolute_volume(media_tracker.avrcp_cid, media_tracker.volume);
+    
+}
+
 #ifdef HAVE_BTSTACK_STDIN
 
 static void show_usage(void){

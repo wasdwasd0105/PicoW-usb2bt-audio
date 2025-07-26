@@ -69,12 +69,13 @@ void on_single_press(void){
     if (! get_a2dp_connected_flag()) {
         a2dp_source_reconnect();
     } else {
-        // next short-press action
+        increase_vol_by_key();
     }
 }
 
 void on_double_press(void){
     if(!get_allow_switch_slot()){
+        decrease_vol_by_key();
         return;
     }
     uint8_t currect_slot = read_uint8_last_flash();
