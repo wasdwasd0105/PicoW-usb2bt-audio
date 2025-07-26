@@ -67,6 +67,8 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
 
      After any bluetooth connection, switching device will not be available until reconnect the USB
 
+9. When connected: single press key-> volume+; double press key-> volume-
+
 
 
 ## Green LED light Status Indicator
