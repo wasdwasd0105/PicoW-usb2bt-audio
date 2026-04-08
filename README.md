@@ -1,7 +1,7 @@
 # PicoW USB Audio to Bluetooth Adapter
 The Pico W USB Audio to Bluetooth Adapter transforms your Raspberry Pi Pico W into a high-quality audio streaming device.
-It allows any device with a USB input, including MacOS, Windows, Linux, Nintendo Switch, PS4/PS5, and more, to gain Bluetooth Audio capability.
 With Pico W Adapter, you can easily transmit audio wirelessly from your USB audio source to your Bluetooth headphones or speaker, enhancing your listening experience.
+Support LDAC and apple AAC-ELD for airpods!
 
 
 <p align="center">
@@ -16,10 +16,10 @@ Setting up PicoW requires no driver or software installation. Simply plug the Pi
 Pico W Bluetooth Adapter utilizes multiple codecs to deliver high-quality audio. 
 
 #### LDAC
-The input is 16-bit 44100Hz PCM audio, and it can steam LDAC audio at 303(Mobile Quality) on Pico W and 606(Standard Quality) Kbps/ 909 Kbps on Pico 2 W.
+The input is 16-bit 48000Hz PCM audio, and it can steam LDAC audio at 303(Mobile Quality) on Pico W and 606(Standard Quality) Kbps/ 909 Kbps on Pico 2 W.
 
 #### AAC
-Only work on Pico 2 W. The input is 16-bit 44100Hz PCM audio, and use fdk-acc to encode the aac.
+Only work on Pico 2 W. The input is 16-bit 48000Hz PCM audio, and use fdk-acc to encode the aac.
 
 #### SBC
 Ready to use: There is a [sbc only project](https://github.com/wasdwasd0105/PicoW-usb2bt-audio-sbc/) that can learn how btstack and tinyusb work on Pico W
@@ -78,7 +78,7 @@ Using the PicoW USB Audio to Bluetooth Adapter is a straightforward process. Her
      | LED on time | codec |
      |-------------|-------|
      | 0.2s        | AAC   |
-     | 3s          | LDAC  |
+     | 3s          | LDAC / AAC-ELD  |
      | 1s          | SBC   |
 
 2. **Blinking Fast (0.5s):** It means that the PicoW Adapter is in pairing mode.
