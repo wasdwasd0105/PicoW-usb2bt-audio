@@ -21,6 +21,10 @@ The input is 16-bit 48000Hz PCM audio, and it can steam LDAC audio at 303(Mobile
 #### AAC
 Only work on Pico 2 W. The input is 16-bit 48000Hz PCM audio, and use fdk-acc to encode the aac.
 
+#### AAC-ELD
+The secret that makes AirPods have significant better sound quality on IOS/MACOS than other OS. 
+
+
 #### SBC
 Ready to use: There is a [sbc only project](https://github.com/wasdwasd0105/PicoW-usb2bt-audio-sbc/) that can learn how btstack and tinyusb work on Pico W
 
