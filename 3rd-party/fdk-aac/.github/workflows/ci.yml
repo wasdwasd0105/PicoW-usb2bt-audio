@@ -214,3 +214,36 @@ jobs:
           cd ffmpeg
           PKG_CONFIG_PATH=$(pwd)/../prefix/lib/pkgconfig ./configure --enable-libfdk-aac --enable-nonfree
           make -j$(nproc)
+
+  check-archive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Check archive content
+        run: |
+          ./check-archive.sh
+
+  check-install:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest }
+          - { runner: ubuntu-latest, params: mingw }
+          - { runner: macos-latest }
+    runs-on: ${{matrix.runner}}
+    steps:
+      - name: Install cross compiler
+        if: ${{ matrix.params == 'mingw' }}
+        run: |
+          sudo apt-get update && sudo apt-get install g++-mingw-w64-x86-64
+      - name: Install autotools
+        if: ${{ startsWith(matrix.runner, 'macos') }}
+        run: |
+          brew install autoconf automake libtool
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Check install content
+        run: |
+          ./check-install.sh ${{matrix.params}}

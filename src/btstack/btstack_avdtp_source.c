@@ -47,6 +47,7 @@
 #include "btstack.h"
 #include "btstack_avdtp_source.h"
 #include "pico/multicore.h"
+#include "pico/util/queue.h"
 
 #include "btstack_hci.h"
 
@@ -59,6 +60,9 @@
 
 #define A2DP_CODEC_VENDOR_ID_SONY 0x12d
 #define A2DP_SONY_CODEC_LDAC 0xaa
+
+#define A2DP_CODEC_VENDOR_ID_APPLE 0x004C
+#define A2DP_APPLE_CODEC_AAC_ELD 0x8001
 
 
 #include <aacenc_lib.h>
@@ -127,7 +131,7 @@ typedef struct {
     uint32_t rtp_timestamp;
 
 
-    uint8_t  codec_storage[1030];
+    uint8_t  codec_storage[1500];  // 3 AAC-ELD frames: 3*~400 = 1200 + margin
     uint16_t codec_storage_count;
     uint8_t  codec_ready_to_send;
     uint16_t codec_num_frames;
@@ -147,7 +151,7 @@ static AACENC_InfoStruct aacinf;
 
 static a2dp_media_sending_context_t media_tracker;
 
-static int current_sample_rate = 44100;
+static int current_sample_rate = 48000;
 
 static uint8_t sdp_avdtp_source_service_buffer[150];
 
@@ -203,6 +207,7 @@ static struct {
 avdtp_stream_endpoint_t * stream_endpoint_sbc;
 avdtp_stream_endpoint_t * stream_endpoint_ldac;
 avdtp_stream_endpoint_t * stream_endpoint_aac;
+avdtp_stream_endpoint_t * stream_endpoint_aaceld;
 
 
 static btstack_sbc_encoder_state_t sbc_encoder_state;
@@ -215,9 +220,9 @@ static bool finish_scan_avdtp_codec = false;
 static uint8_t audio_timer_interval = 5;
 
 // on pico 2w the max stable aac bit rate under 512 simples without vbr is around 220000
-static uint8_t aac_audio_timer_interval = 5;
+static uint8_t aac_audio_timer_interval = 12;
 static uint16_t acc_num_simples = 1024;
-static int max_aac_bit_rate = 192000;
+static int max_aac_bit_rate = 220000;
 static int aac_bit_rate = 192000;
 
 
@@ -231,7 +236,7 @@ static const uint8_t media_sbc_codec_capabilities[] = {
 static uint8_t media_ldac_codec_capabilities[] = {
         0x2D, 0x1, 0x0, 0x0,
         0xAA, 0,
-        0x20,
+        0x30,  // 0x20 (44100) | 0x10 (48000)
         0x01,
         0x1
 };
@@ -257,9 +262,21 @@ typedef struct {
 
 #endif
 
+// Apple AAC-ELD vendor codec capabilities (vendor_id=0x004C, codec_id=0x8001)
+// Format: vendor_id(4 LE) + codec_id(2 LE) + obj_type(2) + freq+ch(2) + rsvd(1) + vbr+bitrate(3)
+static uint8_t media_aaceld_codec_capabilities[] = {
+        0x4C, 0x00, 0x00, 0x00,   // vendor_id = 0x004C (Apple)
+        0x01, 0x80,                // codec_id  = 0x8001
+        0x00, 0x80,                // object_type = 0x0080 (AAC-ELD)
+        0x00, 0x8C,                // freq bitmap 0x008 (48kHz) + channels 0xC (mono+stereo)
+        0x00,                      // reserved
+        0x83, 0xE8, 0x00           // VBR=1, bitrate=256000
+};
+
 // configurations for local stream endpoints
 static uint8_t local_stream_endpoint_sbc_media_codec_configuration[4];
 static uint8_t local_stream_endpoint_ldac_media_codec_configuration[9];
+static uint8_t local_stream_endpoint_aaceld_media_codec_configuration[14];
 static avdtp_media_codec_configuration_ldac_t ldac_configuration;
 
 #ifdef HAVE_AAC_FDK
@@ -343,6 +360,32 @@ static void a2dp_demo_send_media_packet_aac(void) {
 
 }
 
+static uint8_t aaceld_debug_count = 0;
+
+static void a2dp_demo_send_media_packet_aaceld(void) {
+    // Debug: print first few packets
+    // if (aaceld_debug_count < 5) {
+    //     printf("AAC-ELD TX: %d bytes, %d frames, ts=%u, first 8: ",
+    //            media_tracker.codec_storage_count, media_tracker.codec_num_frames,
+    //            (unsigned)media_tracker.rtp_timestamp);
+    //     for (int k = 0; k < 8 && k < media_tracker.codec_storage_count; k++) {
+    //         printf("%02x ", media_tracker.codec_storage[k]);
+    //     }
+    //     printf("\n");
+    //     aaceld_debug_count++;
+    // }
+
+    a2dp_source_stream_send_media_payload_rtp(media_tracker.avdtp_cid, media_tracker.local_seid, 0, media_tracker.rtp_timestamp, &media_tracker.codec_storage[0], media_tracker.codec_storage_count);
+
+    // RTP timestamp: sample-count based (same as standard A2DP)
+    uint16_t frames_sent = (media_tracker.codec_num_frames > 0) ? media_tracker.codec_num_frames : 1;
+    media_tracker.rtp_timestamp += frames_sent * acc_num_simples;
+
+    media_tracker.codec_storage_count = 0;
+    media_tracker.codec_ready_to_send = 0;
+    media_tracker.codec_num_frames = 0;
+}
+
 static void a2dp_demo_send_media_packet_ldac(void) {
 
     uint8_t num_frames = media_tracker.codec_num_frames;
@@ -390,6 +433,8 @@ static void a2dp_demo_send_media_packet(void) {
             uint16_t local_codec_id = get_codec_id(local_cap.media_codec_information);
             if (local_vendor_id == A2DP_CODEC_VENDOR_ID_SONY && local_codec_id == A2DP_SONY_CODEC_LDAC)
                 a2dp_demo_send_media_packet_ldac();
+            else if (local_vendor_id == A2DP_CODEC_VENDOR_ID_APPLE && local_codec_id == A2DP_APPLE_CODEC_AAC_ELD)
+                a2dp_demo_send_media_packet_aaceld();
             break;
         default:
             // TODO:
@@ -400,30 +445,253 @@ static void a2dp_demo_send_media_packet(void) {
 
 
 
-static int shared_audio_counter = 0;
-static uint16_t usb_audio_buf_counter = 0;
-static int16_t * shared_audio_ptr;
+// --- Slot queue audio buffer ---
+typedef struct {
+    int16_t data[AUDIO_SLOT_MAX_INT16];
+} audio_slot_t;
+
+static audio_slot_t slot_pool[AUDIO_SLOT_COUNT_MAX];
+static queue_t free_queue;
+static queue_t ready_queue;
+static uint8_t active_slot_count = AUDIO_SLOT_COUNT_SBC; // current queue depth
+
+// USB-side filling state (written only from Core 0)
+static uint8_t  filling_slot_idx;
+static uint16_t filling_offset    = 0;
+static bool     filling_slot_valid = false;
+static uint16_t slot_frame_int16  = AUDIO_SLOT_MAX_INT16; // set per codec
+
 static bool is_usb_streaming = false;
-static uint16_t cur_codec_buf_len = 256;
 static bool have_ldac_codec_capabilities = false;
+static bool have_aaceld_codec_capabilities = false;
 bd_addr_t cur_active_device;
+
+// --- AAC-ELD Core 1 encoder infrastructure ---
+#define ENCODED_FRAME_MAX_SIZE 500
+#define ENCODED_FRAME_QUEUE_DEPTH 8
+
+typedef struct {
+    uint8_t  data[ENCODED_FRAME_MAX_SIZE];  // Apple header + raw AU
+    uint16_t length;
+} encoded_frame_t;
+
+static encoded_frame_t encoded_frame_pool[ENCODED_FRAME_QUEUE_DEPTH];
+static queue_t encoded_free_queue;   // Core 1 gets empty frames from here
+static queue_t encoded_ready_queue;  // Core 1 pushes encoded frames here, Core 0 pops
+
+static volatile bool core1_encoder_active = false;
+static volatile uint32_t core1_encode_count = 0;  // debug: frames encoded by Core 1
+static volatile uint32_t core1_state = 0;          // debug: 0=idle, 1=active, 2=got_raw, 3=got_enc, 4=encoding, 5=encoded
+static uint16_t aaceld_frame_sequence = 1;  // used by Core 1 only
 bool finish_setup_aac = false;
 bool allow_switch_slot = true;
 
-uint16_t get_cur_codec_buf_len(){
-    return cur_codec_buf_len;
+// --- Suspend recovery: restart stream if suspend response never arrives ---
+static btstack_timer_source_t suspend_recovery_timer;
+static bool suspend_recovery_pending = false;
+#define SUSPEND_RECOVERY_TIMEOUT_MS 3000
+
+static void a2dp_demo_timer_start(a2dp_media_sending_context_t * context);
+
+static void suspend_recovery_handler(btstack_timer_source_t *timer) {
+    (void)timer;
+    if (!suspend_recovery_pending) return;
+    suspend_recovery_pending = false;
+
+    printf("Suspend recovery: no response after %d ms, restarting stream\n", SUSPEND_RECOVERY_TIMEOUT_MS);
+    // Try to start the stream directly (skip suspend since it timed out)
+    avdtp_source_start_stream(media_tracker.avdtp_cid, media_tracker.local_seid);
 }
 
-void set_usb_buf_counter(uint16_t counter){
-    usb_audio_buf_counter = counter;
+void audio_slot_queue_init(void) {
+    active_slot_count = AUDIO_SLOT_COUNT_SBC;  // default
+    queue_init(&free_queue,  sizeof(uint8_t), AUDIO_SLOT_COUNT_MAX);
+    queue_init(&ready_queue, sizeof(uint8_t), AUDIO_SLOT_COUNT_MAX);
+    for (uint8_t i = 0; i < active_slot_count; i++) {
+        queue_try_add(&free_queue, &i);
+    }
+    filling_slot_valid = false;
+    filling_offset = 0;
 }
 
-int get_bt_buf_counter(void) {
-    return shared_audio_counter;
+void audio_slot_queue_configure_with_count(uint16_t samples_per_slot, uint8_t slot_count) {
+    // Drain both queues
+    uint8_t idx;
+    while (queue_try_remove(&ready_queue, &idx)) {}
+    while (queue_try_remove(&free_queue, &idx)) {}
+    // Return filling slot if any
+    if (filling_slot_valid) {
+        filling_slot_valid = false;
+    }
+    filling_offset = 0;
+    slot_frame_int16 = samples_per_slot * 2; // stereo
+    active_slot_count = (slot_count <= AUDIO_SLOT_COUNT_MAX) ? slot_count : AUDIO_SLOT_COUNT_MAX;
+    // Repopulate free queue with new count
+    for (uint8_t i = 0; i < active_slot_count; i++) {
+        queue_try_add(&free_queue, &i);
+    }
+    printf("Slot queue: %d slots x %d samples\n", active_slot_count, samples_per_slot);
 }
 
-void set_shared_audio_buffer(int16_t *data) {
-    shared_audio_ptr = data;
+void audio_slot_queue_configure(uint16_t samples_per_slot) {
+    audio_slot_queue_configure_with_count(samples_per_slot, active_slot_count);
+}
+
+void audio_slot_push_samples(const int16_t *src, uint16_t stereo_pair_count) {
+    uint16_t remaining = stereo_pair_count * 2; // total int16_t values
+    uint16_t src_offset = 0;
+
+    while (remaining > 0) {
+        // Acquire a filling slot if we don't have one
+        if (!filling_slot_valid) {
+            if (!queue_try_remove(&free_queue, &filling_slot_idx)) {
+                return; // no free slots, drop samples
+            }
+            filling_slot_valid = true;
+            filling_offset = 0;
+        }
+
+        // Copy as much as fits into the current slot
+        uint16_t space = slot_frame_int16 - filling_offset;
+        uint16_t to_copy = (remaining < space) ? remaining : space;
+        memcpy(&slot_pool[filling_slot_idx].data[filling_offset],
+               &src[src_offset], to_copy * sizeof(int16_t));
+        filling_offset += to_copy;
+        src_offset += to_copy;
+        remaining -= to_copy;
+
+        // If slot is full, push to ready queue
+        if (filling_offset >= slot_frame_int16) {
+            if (!queue_try_add(&ready_queue, &filling_slot_idx)) {
+                // Ready queue full, return slot to free (drop data)
+                queue_try_add(&free_queue, &filling_slot_idx);
+            }
+            filling_slot_valid = false;
+            filling_offset = 0;
+        }
+    }
+}
+
+// BT-side helpers: pop a ready slot or get a silence slot
+static bool audio_slot_pop(uint8_t *slot_idx) {
+    if (queue_try_remove(&ready_queue, slot_idx)) {
+        return true;
+    }
+    // No data ready — produce silence
+    if (queue_try_remove(&free_queue, slot_idx)) {
+        memset(slot_pool[*slot_idx].data, 0, slot_frame_int16 * sizeof(int16_t));
+        return true;
+    }
+    return false;
+}
+
+// Check if real audio data is available (not silence)
+static bool audio_slot_has_data(void) {
+    return queue_get_level(&ready_queue) > 0;
+}
+
+static void audio_slot_release(uint8_t slot_idx) {
+    queue_try_add(&free_queue, &slot_idx);
+}
+
+// --- Core 1 AAC-ELD encoder ---
+
+static void encoded_frame_queue_init(void) {
+    queue_init(&encoded_free_queue,  sizeof(uint8_t), ENCODED_FRAME_QUEUE_DEPTH);
+    queue_init(&encoded_ready_queue, sizeof(uint8_t), ENCODED_FRAME_QUEUE_DEPTH);
+    for (uint8_t i = 0; i < ENCODED_FRAME_QUEUE_DEPTH; i++) {
+        queue_try_add(&encoded_free_queue, &i);
+    }
+}
+
+void core1_aaceld_encoder_loop(void) {
+    // FDK-AAC encoder buffers
+    AACENC_BufDesc in_buf = {0}, out_buf = {0};
+    AACENC_InArgs  in_args = {0};
+    AACENC_OutArgs out_args = {0};
+    int in_identifier = IN_AUDIO_DATA;
+    int in_size, in_elem_size = 2;
+    int out_identifier = OUT_BITSTREAM_DATA;
+    int out_size, out_elem_size = 1;
+    void *in_ptr, *out_ptr;
+
+    in_buf.numBufs           = 1;
+    in_buf.bufs              = &in_ptr;
+    in_buf.bufferIdentifiers = &in_identifier;
+    in_buf.bufSizes          = &in_size;
+    in_buf.bufElSizes        = &in_elem_size;
+
+    out_buf.numBufs           = 1;
+    out_buf.bufs              = &out_ptr;
+    out_buf.bufferIdentifiers = &out_identifier;
+    out_buf.bufSizes          = &out_size;
+    out_buf.bufElSizes        = &out_elem_size;
+
+    while (true) {
+        if (!core1_encoder_active) {
+            core1_state = 0;
+            sleep_ms(1);
+            continue;
+        }
+        core1_state = 1;
+
+        // Get a raw audio slot (real data or silence)
+        uint8_t raw_slot_idx;
+        if (!audio_slot_pop(&raw_slot_idx)) {
+            sleep_us(500);
+            continue;
+        }
+        core1_state = 2;
+
+        // Get an encoded frame slot
+        uint8_t enc_idx;
+        if (!queue_try_remove(&encoded_free_queue, &enc_idx)) {
+            // No free encoded slots — drop raw data
+            audio_slot_release(raw_slot_idx);
+            sleep_us(500);
+            continue;
+        }
+        core1_state = 3;
+
+        // Encode with FDK-AAC
+        unsigned int num_samples = acc_num_simples * aacinf.inputChannels;
+        in_ptr               = slot_pool[raw_slot_idx].data;
+        in_size              = num_samples * sizeof(int16_t);
+        in_args.numInSamples = num_samples;
+
+        // Leave 4 bytes at start for Apple header
+        out_ptr  = &encoded_frame_pool[enc_idx].data[4];
+        out_size = ENCODED_FRAME_MAX_SIZE - 4;
+
+        core1_state = 4;
+        AACENC_ERROR err = aacEncEncode(handleAAC, &in_buf, &out_buf, &in_args, &out_args);
+        core1_state = 5;
+
+        // Release raw slot immediately
+        audio_slot_release(raw_slot_idx);
+
+        if (err != AACENC_OK || out_args.numOutBytes == 0) {
+            queue_try_add(&encoded_free_queue, &enc_idx);
+            continue;
+        }
+
+        core1_encode_count++;
+
+        // Prepend Apple AAC-ELD Size Header
+        uint16_t seq = aaceld_frame_sequence;
+        aaceld_frame_sequence = (aaceld_frame_sequence + 1) & 0x0FFF;
+        uint16_t au_size = out_args.numOutBytes;
+        encoded_frame_pool[enc_idx].data[0] = 0xB0 | ((seq >> 8) & 0x0F);
+        encoded_frame_pool[enc_idx].data[1] = seq & 0xFF;
+        encoded_frame_pool[enc_idx].data[2] = 0x10 | ((au_size >> 8) & 0x0F);
+        encoded_frame_pool[enc_idx].data[3] = au_size & 0xFF;
+        encoded_frame_pool[enc_idx].length = 4 + out_args.numOutBytes;
+
+        // Push to ready queue for Core 0
+        if (!queue_try_add(&encoded_ready_queue, &enc_idx)) {
+            queue_try_add(&encoded_free_queue, &enc_idx);
+        }
+    }
 }
 
 bool check_is_streaming(){
@@ -440,20 +708,16 @@ bool get_allow_switch_slot(){
 
 
 static int fill_sbc_audio_buffer(a2dp_media_sending_context_t * context){
-    // perform sbc encoding
     int total_num_bytes_read = 0;
     unsigned int num_audio_samples_per_sbc_buffer = btstack_sbc_encoder_num_audio_frames();
-
-    if (!is_usb_streaming){
-        for (uint16_t i = 0; i < AUDIO_BUF_POOL_LEN; i++){
-            shared_audio_ptr[i] = 0;
-        }
-    }
 
     while (context->samples_ready >= num_audio_samples_per_sbc_buffer &&
            (context->max_media_payload_size - context->codec_storage_count) >= btstack_sbc_encoder_sbc_buffer_length()){
 
-        btstack_sbc_encoder_process_data(&shared_audio_ptr[shared_audio_counter]);
+        uint8_t slot_idx;
+        if (!audio_slot_pop(&slot_idx)) break;
+
+        btstack_sbc_encoder_process_data(slot_pool[slot_idx].data);
 
         uint16_t sbc_frame_size = btstack_sbc_encoder_sbc_buffer_length();
         uint8_t * sbc_frame = btstack_sbc_encoder_sbc_buffer();
@@ -464,12 +728,7 @@ static int fill_sbc_audio_buffer(a2dp_media_sending_context_t * context){
         context->codec_storage_count += sbc_frame_size;
         context->samples_ready -= num_audio_samples_per_sbc_buffer;
 
-        shared_audio_counter += num_audio_samples_per_sbc_buffer * 2;
-
-        if (shared_audio_counter > AUDIO_BUF_POOL_LEN - 1){
-            shared_audio_counter = 0;
-        }
-
+        audio_slot_release(slot_idx);
     }
 
     return total_num_bytes_read;
@@ -477,24 +736,21 @@ static int fill_sbc_audio_buffer(a2dp_media_sending_context_t * context){
 
 static int a2dp_demo_fill_ldac_audio_buffer(a2dp_media_sending_context_t *context) {
     int          total_samples_read                = 0;
-    unsigned int num_audio_samples_per_ldac_buffer = LDACBT_ENC_LSU;//LDACBT_ENC_LSU;
+    unsigned int num_audio_samples_per_ldac_buffer = LDACBT_ENC_LSU;
     int          consumed;
-	int          encoded = 0;
-	int          frames;
+    int          encoded = 0;
+    int          frames;
 
     // reserve first byte for number of frames
     if (context->codec_storage_count == 0)
         context->codec_storage_count = 1;
 
-    if (!is_usb_streaming){
-        for (uint16_t i = 0; i < AUDIO_BUF_POOL_LEN; i++){
-            shared_audio_ptr[i] = 0;
-        }
-    }
-    
     while (context->samples_ready >= num_audio_samples_per_ldac_buffer && encoded == 0) {
 
-        if (ldacBT_encode(handleLDAC, &shared_audio_ptr[shared_audio_counter], &consumed, &context->codec_storage[context->codec_storage_count], &encoded, &frames) != 0) {
+        uint8_t slot_idx;
+        if (!audio_slot_pop(&slot_idx)) break;
+
+        if (ldacBT_encode(handleLDAC, slot_pool[slot_idx].data, &consumed, &context->codec_storage[context->codec_storage_count], &encoded, &frames) != 0) {
             printf("LDAC encoding error: %d\n", ldacBT_get_error_code(handleLDAC));
         }
         consumed = consumed / (2 * ldac_configuration.num_channels);
@@ -503,10 +759,7 @@ static int a2dp_demo_fill_ldac_audio_buffer(a2dp_media_sending_context_t *contex
         context->codec_num_frames += frames;
         context->samples_ready -= consumed;
 
-        shared_audio_counter += num_audio_samples_per_ldac_buffer * 2;
-        if (shared_audio_counter > AUDIO_BUF_POOL_LEN - 1){
-            shared_audio_counter = 0;
-        }
+        audio_slot_release(slot_idx);
     }
 
     return total_samples_read;
@@ -519,21 +772,10 @@ static int fill_aac_audio_buffer(a2dp_media_sending_context_t *context) {
     int          total_samples_read               = 0;
 
     unsigned int num_audio_samples_per_aac_buffer = acc_num_simples;
-    //printf("current aac samples %d\n", num_audio_samples_per_aac_buffer);
 
-    btstack_assert(num_audio_samples_per_aac_buffer <= 1024);
+    btstack_assert(num_audio_samples_per_aac_buffer <= AUDIO_SLOT_MAX_SAMPLES);
 
-    unsigned required_bytes = num_audio_samples_per_aac_buffer * aacinf.inputChannels;
-
-    if (!is_usb_streaming){
-        for (uint16_t i = 0; i < AUDIO_BUF_POOL_LEN; i++){
-            shared_audio_ptr[i] = 0;
-        }
-    }
-
-    // // reserve first byte for number of frames
-    // if (context->codec_storage_count == 0)
-    // context->codec_storage_count = 1;
+    unsigned required_samples = num_audio_samples_per_aac_buffer * aacinf.inputChannels;
 
     AACENC_BufDesc in_buf   = { 0 }, out_buf = { 0 };
     AACENC_InArgs  in_args  = { 0 };
@@ -544,8 +786,6 @@ static int fill_aac_audio_buffer(a2dp_media_sending_context_t *context) {
     int out_size, out_elem_size;
     void *in_ptr, *out_ptr;
 
-    in_ptr                   = &shared_audio_ptr[shared_audio_counter];
-    in_size                  = required_bytes;
     in_elem_size             = 2;
     in_buf.numBufs           = 1;
     in_buf.bufs              = &in_ptr;
@@ -560,41 +800,67 @@ static int fill_aac_audio_buffer(a2dp_media_sending_context_t *context) {
     out_buf.bufSizes          = &out_size;
     out_buf.bufElSizes        = &out_elem_size;
 
+    // AAC-ELD: Apple per-frame header (BTAudioHALPlugin adds "AAC-ELD Size Header")
+    int aaceld_hdr_size = (cur_codec == 4) ? 4 : 0;
+
+    // For AAC-ELD, reserve enough space for a full frame (~350 bytes + header)
+    int min_space = (cur_codec == 4) ? 400 : (aaceld_hdr_size + 50);
     while (context->samples_ready >= num_audio_samples_per_aac_buffer &&
-           (context->max_media_payload_size - context->codec_storage_count) > 0) {
-        
-        //produce_sine_audio((int16_t *) pcm_frame, num_audio_samples_per_aac_buffer);
-        in_ptr                   = &shared_audio_ptr[shared_audio_counter];
-        in_args.numInSamples = required_bytes;
-        out_ptr              = &context->codec_storage[context->codec_storage_count];
-        out_size             = sizeof(context->codec_storage) - context->codec_storage_count;
+           (context->max_media_payload_size - context->codec_storage_count) > min_space) {
+
+        uint8_t slot_idx;
+        if (!audio_slot_pop(&slot_idx)) break;
+
+        int hdr_offset = context->codec_storage_count + aaceld_hdr_size;
+
+        in_ptr               = slot_pool[slot_idx].data;
+        in_size              = required_samples * sizeof(int16_t);
+        in_args.numInSamples = required_samples;
+        out_ptr              = &context->codec_storage[hdr_offset];
+        out_size             = sizeof(context->codec_storage) - hdr_offset;
         out_buf.bufs         = &out_ptr;
         out_buf.bufSizes     = &out_size;
         AACENC_ERROR err;
 
         if ((err = aacEncEncode(handleAAC, &in_buf, &out_buf, &in_args, &out_args)) != AACENC_OK) {
-            printf("Error in AAC encoding %d. Check if codec storage size is sufficient\n", err);
+            printf("Error in AAC encoding %d, storage=%d/%d, out_size=%d\n",
+                   err, context->codec_storage_count, (int)sizeof(context->codec_storage), out_size);
+            audio_slot_release(slot_idx);
+            break;
+        }
+
+        // Add Apple AAC-ELD Size Header per frame
+        if (cur_codec == 4 && out_args.numOutBytes > 0) {
+            uint16_t seq = aaceld_frame_sequence;
+            aaceld_frame_sequence = (aaceld_frame_sequence + 1) & 0x0FFF;  // 12-bit wrap
+            uint16_t au_size = out_args.numOutBytes;
+            context->codec_storage[context->codec_storage_count + 0] = 0xB0 | ((seq >> 8) & 0x0F);
+            context->codec_storage[context->codec_storage_count + 1] = seq & 0xFF;
+            context->codec_storage[context->codec_storage_count + 2] = 0x10 | ((au_size >> 8) & 0x0F);
+            context->codec_storage[context->codec_storage_count + 3] = au_size & 0xFF;
+            context->codec_storage_count += 4 + out_args.numOutBytes;
+        } else {
+            context->codec_storage_count += out_args.numOutBytes;
         }
 
         total_samples_read += num_audio_samples_per_aac_buffer;
-        //context->codec_num_frames += 1;
-        context->codec_storage_count += out_args.numOutBytes;
+        context->codec_num_frames++;
         context->samples_ready -= num_audio_samples_per_aac_buffer;
 
-        shared_audio_counter += num_audio_samples_per_aac_buffer*2;
+        audio_slot_release(slot_idx);
 
-        if (shared_audio_counter > AUDIO_BUF_POOL_LEN - 1){
-            shared_audio_counter = 0;
-        }
-
+        // AAC-ELD: max 3 frames per RTP packet
+        if (cur_codec == 4 && context->codec_num_frames >= 3) break;
     }
     return total_samples_read;
 }
 
 #endif
 
-static void avdtp_audio_timeout_handler(btstack_timer_source_t * timer){
+static void a2dp_demo_timer_pause(a2dp_media_sending_context_t * context);
+static void a2dp_demo_timer_stop(a2dp_media_sending_context_t * context);
 
+static void avdtp_audio_timeout_handler(btstack_timer_source_t * timer){
 
     adtvp_media_codec_capabilities_t local_cap;
     a2dp_media_sending_context_t * context = (a2dp_media_sending_context_t *) btstack_run_loop_get_timer_context(timer);
@@ -621,10 +887,88 @@ static void avdtp_audio_timeout_handler(btstack_timer_source_t * timer){
     context->time_audio_data_sent = now;
     context->samples_ready += num_samples;
 
+    // Cap to prevent unbounded accumulation when USB audio pauses
+    uint32_t max_ready = 4 * acc_num_simples;
+    if (context->samples_ready > max_ready) {
+        context->samples_ready = max_ready;
+    }
+
     //printf("num_samples is %d\n", num_samples);
     //printf("samples_ready is %d\n", context->samples_ready);
 
-    if (context->codec_ready_to_send) return;
+    {
+        static uint32_t send_wait_ticks = 0;
+        static uint32_t fail_count = 0;
+        if (context->codec_ready_to_send) {
+            send_wait_ticks++;
+            if (send_wait_ticks > (100 / audio_timer_interval)) {
+                // Can't send for 100ms — drop data and retry
+                context->codec_ready_to_send = 0;
+                context->codec_storage_count = 0;
+                context->codec_num_frames = 0;
+                context->samples_ready = 0;
+                send_wait_ticks = 0;
+                fail_count++;
+
+                // AAC-ELD: suspend immediately on first failure to reset AirPods decoder.
+                // For other codecs, wait for 3 failures.
+                int suspend_threshold = (cur_codec == 4) ? 1 : 3;
+
+                if (fail_count >= suspend_threshold) {
+                    printf("Signal bad suspending stream for recovery (codec=%d, fail=%d)\n",
+                           cur_codec, fail_count);
+
+                    // Reset AAC-ELD encoder + sequence so both sides start fresh
+                    if (cur_codec == 4) {
+                        aaceld_frame_sequence = 1;
+                        context->rtp_timestamp = 0;
+
+                        // Reset FDK-AAC encoder to flush internal overlap state
+                        if (handleAAC != NULL) {
+                            aacEncClose(&handleAAC);
+                            handleAAC = NULL;
+                        }
+                        AACENC_ERROR err;
+                        if ((err = aacEncOpen(&handleAAC, 0x01, 2)) == AACENC_OK) {
+                            aacEncoder_SetParam(handleAAC, AACENC_AOT, 39);
+                            aacEncoder_SetParam(handleAAC, AACENC_BITRATE, 265000);
+                            aacEncoder_SetParam(handleAAC, AACENC_SAMPLERATE, 48000);
+                            aacEncoder_SetParam(handleAAC, AACENC_CHANNELMODE, 2);
+                            aacEncoder_SetParam(handleAAC, AACENC_GRANULE_LENGTH, 480);
+                            aacEncoder_SetParam(handleAAC, AACENC_SBR_MODE, 0);
+                            aacEncoder_SetParam(handleAAC, AACENC_BITRATEMODE, 0);
+                            aacEncoder_SetParam(handleAAC, AACENC_AFTERBURNER, 0);
+                            aacEncoder_SetParam(handleAAC, AACENC_TRANSMUX, TT_MP4_RAW);
+                            aacEncEncode(handleAAC, NULL, NULL, NULL, NULL);
+                            aacEncInfo(handleAAC, &aacinf);
+                        }
+                        printf("AAC-ELD: encoder reset, seq/ts/state cleared\n");
+                    }
+
+                    a2dp_demo_timer_stop(context);
+                    int suspend_status = avdtp_source_suspend(context->avdtp_cid, context->local_seid);
+                    fail_count = 0;
+
+                    if (suspend_status != ERROR_CODE_SUCCESS) {
+                        // Suspend failed immediately — restart timer directly
+                        printf("Suspend failed (status %d), restarting timer\n", suspend_status);
+                        a2dp_demo_timer_start(context);
+                    } else {
+                        // Arm recovery timer in case suspend response never arrives
+                        suspend_recovery_pending = true;
+                        btstack_run_loop_remove_timer(&suspend_recovery_timer);
+                        btstack_run_loop_set_timer_handler(&suspend_recovery_timer, suspend_recovery_handler);
+                        btstack_run_loop_set_timer(&suspend_recovery_timer, SUSPEND_RECOVERY_TIMEOUT_MS);
+                        btstack_run_loop_add_timer(&suspend_recovery_timer);
+                    }
+                    return;
+                }
+            }
+            return;
+        }
+        send_wait_ticks = 0;
+        fail_count = 0;  // reset on successful send
+    }
 
     avdtp_media_codec_type_t codec_type = sc.local_stream_endpoint->remote_configuration.media_codec.media_codec_type;
 
@@ -667,7 +1011,17 @@ static void avdtp_audio_timeout_handler(btstack_timer_source_t * timer){
                 a2dp_demo_fill_ldac_audio_buffer(context);
 
                 if (context->codec_storage_count > 1) {
-                    // schedule sending
+                    context->codec_ready_to_send = 1;
+                    a2dp_source_stream_endpoint_request_can_send_now(context->avdtp_cid, context->local_seid);
+                }
+            }
+            // Apple AAC-ELD: encode on Core 0 (FDK-AAC not safe for Core 1)
+            else if (local_vendor_id == A2DP_CODEC_VENDOR_ID_APPLE && local_codec_id == A2DP_APPLE_CODEC_AAC_ELD) {
+                fill_aac_audio_buffer(context);
+
+                if (context->codec_num_frames >= 3 ||
+                    (context->codec_num_frames > 0 &&
+                     (context->max_media_payload_size - context->codec_storage_count) <= 400)) {
                     context->codec_ready_to_send = 1;
                     a2dp_source_stream_endpoint_request_can_send_now(context->avdtp_cid, context->local_seid);
                 }
@@ -681,7 +1035,13 @@ static void avdtp_audio_timeout_handler(btstack_timer_source_t * timer){
 
 static void a2dp_demo_timer_start(a2dp_media_sending_context_t * context){
 
-    context->max_media_payload_size = 0x290;
+    // AAC-ELD: max 986 bytes per RTP payload (Apple negotiated limit)
+    // AAC-LC/SBC/LDAC: 656 bytes
+    if (cur_codec == 4) {
+        context->max_media_payload_size = 986;
+    } else {
+        context->max_media_payload_size = 0x290;
+    }
     context->codec_storage_count = 0;
     context->codec_ready_to_send = 0;
     context->streaming = 1;
@@ -693,6 +1053,9 @@ static void a2dp_demo_timer_start(a2dp_media_sending_context_t * context){
 }
 
 static void a2dp_demo_timer_stop(a2dp_media_sending_context_t * context){
+    core1_encoder_active = false;  // stop Core 1 encoder
+    suspend_recovery_pending = false;
+    btstack_run_loop_remove_timer(&suspend_recovery_timer);
     context->time_audio_data_sent = 0;
     context->acc_num_missed_samples = 0;
     context->samples_ready = 0;
@@ -700,7 +1063,7 @@ static void a2dp_demo_timer_stop(a2dp_media_sending_context_t * context){
     context->codec_storage_count = 0;
     context->codec_ready_to_send = 0;
     btstack_run_loop_remove_timer(&context->audio_timer);
-} 
+}
 
 static void a2dp_demo_timer_pause(a2dp_media_sending_context_t * context){
     is_streaming = false;
@@ -837,7 +1200,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             avdtp_subevent_signaling_connection_established_get_bd_addr(packet, address);
             // print info
             printf("Current Device found: %s \n",  bd_addr_to_str(address));
-            memcpy(cur_active_device, address, sizeof(bd_addr_t));            
+            memcpy(cur_active_device, address, sizeof(bd_addr_t));
 
             avdtp_cid = avdtp_subevent_signaling_connection_established_get_avdtp_cid(packet);
             status = avdtp_subevent_signaling_connection_established_get_status(packet);
@@ -853,6 +1216,9 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             // seid selected per argv
             num_remote_seps = 0;
             selected_remote_sep_index = 0;
+            have_ldac_codec_capabilities = false;
+            have_aaceld_codec_capabilities = false;
+            finish_setup_aac = false;
             status = avdtp_source_discover_stream_endpoints(media_tracker.avdtp_cid);
             a2dp_is_connected_flag = true;
 
@@ -1049,10 +1415,23 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 have_ldac_codec_capabilities = true;
                 printf("CAPABILITY - LDAC, remote seid %u\n", remote_seid);
             }
-            else
+            else if (vendor_id == A2DP_CODEC_VENDOR_ID_APPLE && codec_id == A2DP_APPLE_CODEC_AAC_ELD)
+            {
+                have_aaceld_codec_capabilities = true;
+                printf("CAPABILITY - Apple AAC-ELD, remote seid %u\n", remote_seid);
+                uint16_t info_len = avdtp_subevent_signaling_media_codec_other_capability_get_media_codec_information_len(packet);
+                printf("  raw bytes (%u): ", info_len);
+                for (int k = 0; k < info_len; k++) {
+                    printf("%02x ", media_info[k]);
+                }
+                printf("\n");
+            }
+            else {
                 printf("CAPABILITY - MEDIA_CODEC: OTHER, remote seid %u: \n", remote_seid);
-                printf("vendor_id 0x%04x: \n", remote_seid);
+                printf("vendor_id 0x%04x: \n", vendor_id);
                 printf("codec_id: 0x%04x: \n", codec_id);
+            }
+
             break;
 
         case AVDTP_SUBEVENT_SIGNALING_MEDIA_CODEC_SBC_CONFIGURATION:{
@@ -1103,7 +1482,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
             audio_timer_interval = 10;
 
-            cur_codec_buf_len = btstack_sbc_encoder_num_audio_frames();
+            audio_slot_queue_configure_with_count(btstack_sbc_encoder_num_audio_frames(), AUDIO_SLOT_COUNT_SBC);
 
             cur_codec = 1;
 
@@ -1135,15 +1514,13 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
            int aot = convert_aac_object_type(aac_configuration.object_type);
 
-           //int vbr = convert_aac_vbr(aac_configuration.vbr);
-
-           int vbr = 0;
+           int vbr = convert_aac_vbr(aac_configuration.vbr);
 
            //aac_configuration.bit_rate = aac_bit_rate;
 
             if (aac_bit_rate > max_aac_bit_rate){
                 aac_configuration.bit_rate = max_aac_bit_rate;
-            }else{
+            } else {
                 aac_configuration.bit_rate = aac_bit_rate;
             }
 
@@ -1206,6 +1583,8 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
             audio_timer_interval = aac_audio_timer_interval;
 
+            audio_slot_queue_configure_with_count(acc_num_simples, AUDIO_SLOT_COUNT_AAC);
+
             cur_codec = 2;
 
             avdtp_source_open_stream(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid);
@@ -1259,13 +1638,104 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                 current_sample_rate = ldac_configuration.sampling_frequency;
                 printf("current LDAC sampling rate is %d \n", current_sample_rate);
 
+                audio_slot_queue_configure_with_count(LDACBT_ENC_LSU, AUDIO_SLOT_COUNT_LDAC);
+
                 cur_codec = 3;
 
                 avdtp_source_open_stream(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid);
 
-            } 
-            
-            else 
+            }
+            // Apple AAC-ELD
+            else if (vendor_id == A2DP_CODEC_VENDOR_ID_APPLE && codec_id == A2DP_APPLE_CODEC_AAC_ELD) {
+                printf("A2DP Source: Received Apple AAC-ELD configuration!\n");
+                printf("  raw config bytes: ");
+                uint16_t config_info_len = a2dp_subevent_signaling_media_codec_other_configuration_get_media_codec_information_len(packet);
+                for (int k = 0; k < config_info_len; k++) {
+                    printf("%02x ", codec_info[k]);
+                }
+                printf("\n");
+
+                // Init FDK-AAC encoder for AAC-ELD (AOT 39)
+                AACENC_ERROR err;
+                // Close previous encoder if reconnecting
+                if (handleAAC != NULL) {
+                    aacEncClose(&handleAAC);
+                    handleAAC = NULL;
+                }
+                if ((err = aacEncOpen(&handleAAC, 0x01, 2)) != AACENC_OK) {
+                    printf("Couldn't open AAC-ELD encoder: %d\n", err);
+                    break;
+                }
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_AOT, 39)) != AACENC_OK) {
+                    printf("Couldn't set AAC-ELD AOT: %d\n", err);
+                    break;
+                }
+                // 265kbps CBR, ~240 bytes/frame at 480 samples
+                // 3*(4+240) = 732 < 986 MTU, with BT overhead ~220kbps < 256kbps link
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_BITRATE, 265000)) != AACENC_OK) {
+                    printf("Couldn't set AAC-ELD bitrate: %d\n", err);
+                    break;
+                }
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_SAMPLERATE, 48000)) != AACENC_OK) {
+                    printf("Couldn't set AAC-ELD sample rate: %d\n", err);
+                    break;
+                }
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_CHANNELMODE, 2)) != AACENC_OK) {
+                    printf("Couldn't set AAC-ELD channel mode: %d\n", err);
+                    break;
+                }
+                // 480 samples = 10ms at 48kHz (AAC-ELD-Stereo48K-10ms mode 130)
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_GRANULE_LENGTH, 480)) != AACENC_OK) {
+                    printf("Couldn't set AAC-ELD frame size: %d\n", err);
+                    break;
+                }
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_SBR_MODE, 0)) != AACENC_OK) {
+                    printf("Couldn't set AAC-ELD SBR mode: %d\n", err);
+                    break;
+                }
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_BITRATEMODE, 0)) != AACENC_OK) {
+                    printf("Couldn't set AAC-ELD VBR mode: %d\n", err);
+                    break;
+                }
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_AFTERBURNER, 0)) != AACENC_OK) {
+                    printf("Couldn't disable AAC-ELD afterburner: %d\n", err);
+                    break;
+                }
+                // Raw access units with Apple 4-byte per-frame header
+                if ((err = aacEncoder_SetParam(handleAAC, AACENC_TRANSMUX, TT_MP4_RAW)) != AACENC_OK) {
+                    printf("Couldn't set AAC-ELD transport: %d\n", err);
+                    break;
+                }
+                if ((err = aacEncEncode(handleAAC, NULL, NULL, NULL, NULL)) != AACENC_OK) {
+                    printf("Couldn't initialize AAC-ELD encoder: %d\n", err);
+                    break;
+                }
+                if ((err = aacEncInfo(handleAAC, &aacinf)) != AACENC_OK) {
+                    printf("Couldn't get AAC-ELD encoder info: %d\n", err);
+                    break;
+                }
+
+                printf("AAC-ELD setup complete! frameLength=%d, inputChannels=%d\n",
+                       aacinf.frameLength, aacinf.inputChannels);
+
+                current_sample_rate = 48000;
+                acc_num_simples = aacinf.frameLength;  // use actual frame size from encoder
+                audio_timer_interval = 10;
+
+                printf("AAC-ELD acc_num_simples=%d\n", acc_num_simples);
+
+                audio_slot_queue_configure_with_count(acc_num_simples, AUDIO_SLOT_COUNT_ELD);
+
+                // Core 1 path exists, but FDK-AAC is currently encoded on Core 0.
+                aaceld_frame_sequence = 1;
+                core1_encoder_active = false;
+                printf("AAC-ELD Core 0 encoder active\n");
+
+                cur_codec = 4;  // new codec ID for AAC-ELD
+
+                avdtp_source_open_stream(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid);
+            }
+            else
             {
                 printf("Config not handled for %s\n", codec_name_for_type(remote_seps[selected_remote_sep_index].sep.capabilities.media_codec.media_codec_type));
             }
@@ -1299,7 +1769,13 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
                     break;
                 case AVDTP_SI_SUSPEND:
                     printf("Stream paused.\n");
+                    // Cancel recovery timer — suspend response arrived
+                    suspend_recovery_pending = false;
+                    btstack_run_loop_remove_timer(&suspend_recovery_timer);
                     a2dp_demo_timer_pause(&media_tracker);
+                    // Auto-restart: ask to resume so AirPods reset their decoder
+                    printf("Auto-restarting stream...\n");
+                    avdtp_source_start_stream(media_tracker.avdtp_cid, media_tracker.local_seid);
                     break;
                 case AVDTP_SI_ABORT:
                 case AVDTP_SI_CLOSE:
@@ -1314,10 +1790,27 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
         case AVDTP_SUBEVENT_SIGNALING_REJECT:
             signal_identifier = avdtp_subevent_signaling_reject_get_signal_identifier(packet);
             printf("Rejected %s\n", avdtp_si2str(signal_identifier));
+            // If suspend or start was rejected during recovery, restart timer
+            if (signal_identifier == AVDTP_SI_SUSPEND || signal_identifier == AVDTP_SI_START) {
+                suspend_recovery_pending = false;
+                btstack_run_loop_remove_timer(&suspend_recovery_timer);
+                if (a2dp_is_connected_flag) {
+                    printf("Restarting audio timer after reject\n");
+                    a2dp_demo_timer_start(&media_tracker);
+                }
+            }
             break;
         case AVDTP_SUBEVENT_SIGNALING_GENERAL_REJECT:
             signal_identifier = avdtp_subevent_signaling_general_reject_get_signal_identifier(packet);
             printf("Rejected %s\n", avdtp_si2str(signal_identifier));
+            if (signal_identifier == AVDTP_SI_SUSPEND || signal_identifier == AVDTP_SI_START) {
+                suspend_recovery_pending = false;
+                btstack_run_loop_remove_timer(&suspend_recovery_timer);
+                if (a2dp_is_connected_flag) {
+                    printf("Restarting audio timer after general reject\n");
+                    a2dp_demo_timer_start(&media_tracker);
+                }
+            }
             break;
         case AVDTP_SUBEVENT_STREAMING_CONNECTION_RELEASED:
             a2dp_demo_timer_stop(&media_tracker);
@@ -1332,6 +1825,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             cur_capability = 0;
             set_led_mode_off();
             have_ldac_codec_capabilities = false;
+            have_aaceld_codec_capabilities = false;
             finish_setup_aac = false;
             printf("Signaling connection released.\n");
             break;
@@ -1587,13 +2081,15 @@ static int setup_sbc_configuration(){
         }
     }
 
-    // // - SBC
-    stream_endpoint_sbc = a2dp_source_create_stream_endpoint(AVDTP_AUDIO, AVDTP_CODEC_SBC, (uint8_t *) media_sbc_codec_capabilities, sizeof(media_sbc_codec_capabilities), (uint8_t*) local_stream_endpoint_sbc_media_codec_configuration, sizeof(local_stream_endpoint_sbc_media_codec_configuration));
-    btstack_assert(stream_endpoint_sbc != NULL);
-    stream_endpoint_sbc->media_codec_configuration_info = local_stream_endpoint_sbc_media_codec_configuration;
-    stream_endpoint_sbc->media_codec_configuration_len  = sizeof(local_stream_endpoint_sbc_media_codec_configuration);
+    // // - SBC (create only once)
+    if (stream_endpoint_sbc == NULL) {
+        stream_endpoint_sbc = a2dp_source_create_stream_endpoint(AVDTP_AUDIO, AVDTP_CODEC_SBC, (uint8_t *) media_sbc_codec_capabilities, sizeof(media_sbc_codec_capabilities), (uint8_t*) local_stream_endpoint_sbc_media_codec_configuration, sizeof(local_stream_endpoint_sbc_media_codec_configuration));
+        btstack_assert(stream_endpoint_sbc != NULL);
+        stream_endpoint_sbc->media_codec_configuration_info = local_stream_endpoint_sbc_media_codec_configuration;
+        stream_endpoint_sbc->media_codec_configuration_len  = sizeof(local_stream_endpoint_sbc_media_codec_configuration);
+    }
     avdtp_source_register_delay_reporting_category(avdtp_local_seid(stream_endpoint_sbc));
-    avdtp_set_preferred_sampling_frequency(stream_endpoint_sbc, 44100);
+    avdtp_set_preferred_sampling_frequency(stream_endpoint_sbc, 48000);
     avdtp_set_preferred_channel_mode(stream_endpoint_sbc, AVDTP_SBC_STEREO);
 
     // set up local stream_endpoint; need change
@@ -1635,11 +2131,13 @@ static int setup_aac_configuration(){
 
     #ifdef HAVE_AAC_FDK
     // - AAC
-    stream_endpoint_aac = a2dp_source_create_stream_endpoint(AVDTP_AUDIO, AVDTP_CODEC_MPEG_2_4_AAC, (uint8_t *) media_aac_codec_capabilities, sizeof(media_aac_codec_capabilities), (uint8_t*) local_stream_endpoint_aac_media_codec_configuration, sizeof(local_stream_endpoint_aac_media_codec_configuration));
-    btstack_assert(stream_endpoint_aac != NULL);
-    stream_endpoint_aac->media_codec_configuration_info = local_stream_endpoint_aac_media_codec_configuration;
-    stream_endpoint_aac->media_codec_configuration_len  = sizeof(local_stream_endpoint_aac_media_codec_configuration);
-    avdtp_source_register_delay_reporting_category(avdtp_local_seid(stream_endpoint_aac));
+    if (stream_endpoint_aac == NULL) {
+        stream_endpoint_aac = a2dp_source_create_stream_endpoint(AVDTP_AUDIO, AVDTP_CODEC_MPEG_2_4_AAC, (uint8_t *) media_aac_codec_capabilities, sizeof(media_aac_codec_capabilities), (uint8_t*) local_stream_endpoint_aac_media_codec_configuration, sizeof(local_stream_endpoint_aac_media_codec_configuration));
+        btstack_assert(stream_endpoint_aac != NULL);
+        stream_endpoint_aac->media_codec_configuration_info = local_stream_endpoint_aac_media_codec_configuration;
+        stream_endpoint_aac->media_codec_configuration_len  = sizeof(local_stream_endpoint_aac_media_codec_configuration);
+        avdtp_source_register_delay_reporting_category(avdtp_local_seid(stream_endpoint_aac));
+    }
     #endif
 
     uint8_t  aac_num = 0;
@@ -1662,7 +2160,7 @@ static int setup_aac_configuration(){
     // setup MPEG AAC configuration
     avdtp_configuration_mpeg_aac_t configuration;
     configuration.object_type = 1;
-    configuration.sampling_frequency = 44100;
+    configuration.sampling_frequency = 48000;
     configuration.channels = 2;
 
     // if (aac_bit_rate > max_aac_bit_rate){
@@ -1674,8 +2172,7 @@ static int setup_aac_configuration(){
     configuration.bit_rate = aac_bit_rate;
 
 
-    //disable vbr, it will cause unstable 
-    configuration.vbr = 0;
+    configuration.vbr = 1;
     
     avdtp_config_mpeg_aac_store(media_codec_config_data, &configuration);
 
@@ -1697,7 +2194,7 @@ static int setup_aac_configuration(){
 
 
 static int set_ldac_configuration(){
-    uint8_t  ladc_num = 0;
+    int ladc_num = -1;
     if (num_remote_seps == 0){
         printf("Remote Stream Endpoints not discovered yet, please discover stream endpoints first\n");
         return -1;
@@ -1711,7 +2208,7 @@ static int set_ldac_configuration(){
         }
     }
 
-    if (ladc_num == 0){
+    if (ladc_num < 0){
         printf("not found LDAC!!!\n");
         return -1;
     }
@@ -1751,7 +2248,7 @@ static int set_ldac_configuration(){
     media_codec_config_data[4] = 0xAA;
     media_codec_config_data[5] = 0x0;  // A2DP_LDAC_CODEC_ID 0x00AA
 
-    media_codec_config_data[6] = 0x20; // A2DP_LDAC_SAMPLING_FREQ_44100
+    media_codec_config_data[6] = 0x10; // A2DP_LDAC_SAMPLING_FREQ_48000
 
     media_codec_config_data[7] = 0x01; // A2DP_LDAC_CHANNEL_MODE_STEREO
 
@@ -1776,12 +2273,88 @@ static int set_ldac_configuration(){
 }
 
 
+static int setup_aaceld_configuration(){
+    int aaceld_num = -1;
+    if (num_remote_seps == 0){
+        printf("Remote Stream Endpoints not discovered yet\n");
+        return -1;
+    }
+    for (int i = 0; i < num_remote_seps; i++){
+        if (remote_seps[i].vendor_id == A2DP_CODEC_VENDOR_ID_APPLE && remote_seps[i].codec_id == A2DP_APPLE_CODEC_AAC_ELD){
+            printf("found Apple AAC-ELD!!! Remote Stream Endpoints ID is %d\n", i);
+            selected_remote_sep_index = i;
+            aaceld_num = i;
+            break;
+        }
+    }
+
+    if (aaceld_num < 0){
+        printf("not found Apple AAC-ELD!!!\n");
+        return -1;
+    }
+
+    avdtp_media_codec_type_t codec_type = remote_seps[aaceld_num].sep.capabilities.media_codec.media_codec_type;
+    if (codec_type != AVDTP_CODEC_NON_A2DP) {
+        printf("AAC-ELD codec type mismatch!!!\n");
+        return -1;
+    }
+
+    // Create AAC-ELD stream endpoint (only once)
+    if (stream_endpoint_aaceld == NULL) {
+        stream_endpoint_aaceld = a2dp_source_create_stream_endpoint(
+            AVDTP_AUDIO, AVDTP_CODEC_NON_A2DP,
+            (uint8_t *) media_aaceld_codec_capabilities, sizeof(media_aaceld_codec_capabilities),
+            (uint8_t*) local_stream_endpoint_aaceld_media_codec_configuration,
+            sizeof(local_stream_endpoint_aaceld_media_codec_configuration));
+        btstack_assert(stream_endpoint_aaceld != NULL);
+        stream_endpoint_aaceld->media_codec_configuration_info = local_stream_endpoint_aaceld_media_codec_configuration;
+        stream_endpoint_aaceld->media_codec_configuration_len  = sizeof(local_stream_endpoint_aaceld_media_codec_configuration);
+        avdtp_source_register_delay_reporting_category(avdtp_local_seid(stream_endpoint_aaceld));
+    }
+
+    sc.local_stream_endpoint = stream_endpoint_aaceld;
+
+    media_tracker.local_seid  = avdtp_local_seid(sc.local_stream_endpoint);
+    media_tracker.remote_seid = remote_seps[aaceld_num].sep.seid;
+
+    sc.local_stream_endpoint->remote_configuration_bitmap = store_bit16(sc.local_stream_endpoint->remote_configuration_bitmap, AVDTP_MEDIA_CODEC, 1);
+    sc.local_stream_endpoint->remote_configuration.media_codec.media_type = AVDTP_AUDIO;
+    sc.local_stream_endpoint->remote_configuration.media_codec.media_codec_type = codec_type;
+
+    // Build config: vendor_id(4 LE) + codec_id(2 LE) + params(8)
+    media_codec_config_data[0]  = 0x4C;  // vendor_id LE
+    media_codec_config_data[1]  = 0x00;
+    media_codec_config_data[2]  = 0x00;
+    media_codec_config_data[3]  = 0x00;
+    media_codec_config_data[4]  = 0x01;  // codec_id LE
+    media_codec_config_data[5]  = 0x80;
+    media_codec_config_data[6]  = 0x00;  // object_type: AAC-ELD
+    media_codec_config_data[7]  = 0x80;
+    media_codec_config_data[8]  = 0x00;  // sampling_freq 48kHz (0x008) + channels stereo (0x4)
+    media_codec_config_data[9]  = 0x84;
+    media_codec_config_data[10] = 0x00;  // reserved
+    media_codec_config_data[11] = 0x83;  // VBR=1, bitrate=256000
+    media_codec_config_data[12] = 0xE8;
+    media_codec_config_data[13] = 0x00;
+    media_codec_config_len = 14;
+
+    avdtp_capabilities_t new_configuration;
+    new_configuration.media_codec.media_type = AVDTP_AUDIO;
+    new_configuration.media_codec.media_codec_type = codec_type;
+    new_configuration.media_codec.media_codec_information_len = media_codec_config_len;
+    new_configuration.media_codec.media_codec_information = media_codec_config_data;
+    int status = avdtp_source_set_configuration(media_tracker.avdtp_cid, media_tracker.local_seid, media_tracker.remote_seid, 1 << AVDTP_MEDIA_CODEC, new_configuration);
+
+    printf("Set Apple AAC-ELD Connection Result is %d\n", status);
+    return status;
+}
+
 
 void avdtp_disconnect_and_scan(){
     a2dp_demo_timer_stop(&media_tracker);
     a2dp_source_disconnect(media_tracker.avdtp_cid);
     avrcp_disconnect(media_tracker.avdtp_cid);
-    shared_audio_counter = 0;
+    audio_slot_queue_init(); // reset all slots on disconnect
     gap_drop_link_key_for_bd_addr((uint8_t *) get_device_addr());
     uint8_t currect_slot = read_uint8_last_flash();
 
@@ -1817,14 +2390,28 @@ int set_next_codec(uint8_t num){
     //return 0;
     //return setup_sbc_configuration();
     switch (num){
-        case 0: // LDAC // aac
-            if (have_ldac_codec_capabilities){
+        case 0: // AAC-ELD > LDAC > AAC > SBC
+            if (have_aaceld_codec_capabilities){
+                return setup_aaceld_configuration();
+            } else if (have_ldac_codec_capabilities){
                 return set_ldac_configuration();
-            }else{
-                return setup_aac_configuration();
+            } else {
+                // Check if remote actually has AAC before trying
+                bool have_aac = false;
+                for (int i = 0; i < num_remote_seps; i++){
+                    if (remote_seps[i].sep.capabilities.media_codec.media_codec_type == AVDTP_CODEC_MPEG_2_4_AAC){
+                        have_aac = true;
+                        break;
+                    }
+                }
+                if (have_aac) {
+                    return setup_aac_configuration();
+                } else {
+                    printf("No AAC support, falling back to SBC\n");
+                    return setup_sbc_configuration();
+                }
             }
         case 1: // sbc
-            //return 0;
             return setup_sbc_configuration();
         default:
             return 1;
@@ -1867,6 +2454,9 @@ void start_led_blink(){
             break;
         case 2:
             set_led_mode_playing_aac();
+            break;
+        case 4:  // AAC-ELD
+            set_led_mode_playing_ldac();
             break;
         case 3:
             set_led_mode_playing_ldac();
@@ -1914,6 +2504,11 @@ static void avrcp_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t 
             
             printf("Enable Volume Change notification\n");
             avrcp_controller_enable_notification(media_tracker.avrcp_cid, AVRCP_NOTIFICATION_EVENT_VOLUME_CHANGED);
+            // Set initial volume to 50% on first connection
+            if (media_tracker.volume == 0 || media_tracker.volume == 127) {
+                media_tracker.volume = 64;  // ~50% (0-127 range)
+                avrcp_controller_set_absolute_volume(media_tracker.avrcp_cid, media_tracker.volume);
+            }
             printf("Enable Battery Status Change notification\n");
             avrcp_controller_enable_notification(media_tracker.avrcp_cid, AVRCP_NOTIFICATION_EVENT_BATT_STATUS_CHANGED);
             return;

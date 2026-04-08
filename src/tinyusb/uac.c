@@ -40,12 +40,10 @@
  //--------------------------------------------------------------------+
  
  // List of supported sample rates
- const uint32_t sample_rates[] = {44100};
- 
- uint32_t current_sample_rate  = 44100;
+ const uint32_t sample_rates[] = {48000};
 
- uint16_t buffer_counter = 0;
- uint16_t audio_buffer_pool[AUDIO_BUF_POOL_LEN] = {0};
+ uint32_t current_sample_rate  = 48000;
+
  bool need_change_bt_volume = false;
  
  #define N_SAMPLE_RATES  TU_ARRAY_SIZE(sample_rates)
@@ -126,9 +124,6 @@
    };
    tusb_init(BOARD_TUD_RHPORT, &dev_init);
 
-
-  // share the audio pool buf to BT 
-  set_shared_audio_buffer(audio_buffer_pool);
 
  }
 
@@ -410,30 +405,13 @@ void tinyusb_control_task(void){
    {
     usb_stop_delay = 0;
     set_usb_streaming(true);
-    //printf("currect data size is %d\n", spk_data_size);
     if (current_resolution == 16)
     {
       int16_t *src = (int16_t *)spk_buf;
       uint16_t sample_count = spk_data_size / 4; // should be 44-45
 
-      // Check if usb_audio_buf_counter is in the range of shared_audio_counter and shared_audio_counter + num_audio_samples_per_sbc_buffer * 2
-      // 128 is a not good value; need get from btstack_sbc_encoder_sbc_buffer_length()
-      if (get_bt_buf_counter() < buffer_counter && buffer_counter < (get_bt_buf_counter() + get_cur_codec_buf_len() * 2)){
-      // If so, wait until more data is written
-          buffer_counter += sample_count * 2;
-        }
+      audio_slot_push_samples(src, sample_count);
 
-        for (int i = 0; i < sample_count * 2; i++)
-        {
-            int16_t sample = src[i];
-
-            if (buffer_counter >= AUDIO_BUF_POOL_LEN)
-                buffer_counter = 0;
-
-            audio_buffer_pool[buffer_counter++] = (int16_t)sample;
-        }
-
-      set_usb_buf_counter(buffer_counter);
       is_usb_audio_running = true;
       spk_data_size = 0;
     }

@@ -5,13 +5,22 @@
 #ifndef PICOW_USB_BT_AUDIO_SSP_COUNTER_H
 #define PICOW_USB_BT_AUDIO_SSP_COUNTER_H
 
-#define AUDIO_BUF_POOL_LEN 6144
+#include <stdint.h>
+#include <stdbool.h>
 
-int get_bt_buf_counter();
+// Slot queue constants
+#define AUDIO_SLOT_COUNT_SBC   24   // SBC: 128 samples/slot, 24*2.67ms = 64ms buffer
+#define AUDIO_SLOT_COUNT_AAC   16   // AAC-LC: 1024 samples/slot, 16*21.3ms = 341ms buffer
+#define AUDIO_SLOT_COUNT_ELD   6    // AAC-ELD: 480 samples/slot, 6*10ms = 60ms buffer
+#define AUDIO_SLOT_COUNT_LDAC  16   // LDAC: 256 samples/slot, 16*5.3ms = 85ms buffer
+#define AUDIO_SLOT_COUNT_MAX   24   // pool size = max of all above
+#define AUDIO_SLOT_MAX_SAMPLES 1024
+#define AUDIO_SLOT_MAX_INT16   (AUDIO_SLOT_MAX_SAMPLES * 2)  // stereo
 
-void set_usb_buf_counter(uint16_t counter);
-
-void set_shared_audio_buffer(int16_t *data);
+// Slot queue API (multicore-safe)
+void audio_slot_queue_init(void);
+void audio_slot_queue_configure(uint16_t samples_per_slot);
+void audio_slot_push_samples(const int16_t *src, uint16_t stereo_pair_count);
 
 bool check_is_streaming();
 
@@ -24,8 +33,6 @@ bool get_bt_mute();
 void set_usb_streaming(bool flag);
 
 bool * get_is_bt_sink_volume_changed_ptr();
-
-uint16_t get_cur_codec_buf_len();
 
 int btstack_main(int argc, const char * argv[]);
 
@@ -50,6 +57,8 @@ static int setup_sbc_configuration();
 static int set_ldac_configuration();
 
 bool get_allow_switch_slot();
+
+void core1_aaceld_encoder_loop(void);
 
 void increase_vol_by_key();
 

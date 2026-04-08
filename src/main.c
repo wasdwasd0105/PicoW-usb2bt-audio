@@ -29,7 +29,7 @@
 #include "pico/flash.h"
 
 
-bool __no_inline_not_in_flash_func(get_bootsel_button)() {
+static bool __no_inline_not_in_flash_func(get_bootsel_button)() {
     const uint CS_PIN_INDEX = 1;
 
     // Must disable interrupts, as interrupt handlers may be in flash, and we
@@ -166,6 +166,11 @@ bool bootsel_timer_callback(repeating_timer_t *rt) {
     return true;    // keep repeating
 }
 
+// Watchdog: auto-reset if system gets stuck (e.g. NOCP fault from CPACR corruption)
+// void isr_hardfault(void) {
+//     watchdog_reboot(0, 0, 0);  // immediate reset
+// }
+
 int main() {
 
     vreg_set_voltage(VREG_VOLTAGE_1_20);
@@ -190,6 +195,8 @@ int main() {
 
     tinyusb_main();
 
+    audio_slot_queue_init();
+
     printf("init ctw43.\n");
 
     // initialize CYW43 driver
@@ -201,15 +208,23 @@ int main() {
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 
     btstack_main(0, NULL);
-    sleep_ms(200);  
-    
+    sleep_ms(200);
+
+    // NOTE: FDK-AAC hangs on Core 1 (likely internal global state / malloc contention)
+    // Keep encoding on Core 0 for now
+    // multicore_launch_core1_with_stack(core1_aaceld_encoder_loop, core1_stack, sizeof(core1_stack));
+
     static repeating_timer_t usb_timer;
     add_repeating_timer_us(-500, usb_timer_callback, NULL, &usb_timer);
 
     static repeating_timer_t bootsel_timer;
     add_repeating_timer_us(20000, bootsel_timer_callback, NULL, &bootsel_timer);
 
+    // Enable watchdog — auto-resets if main loop stops feeding it (2 seconds)
+    watchdog_enable(2000, true);
+
     while (1) {
+        watchdog_update();  // feed the watchdog
         tinyusb_control_task();
         sleep_ms(50);
     }
