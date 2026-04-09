@@ -80,11 +80,15 @@ The first byte of each raw AU is the AAC `global_gain` field.
 
 Standard A2DP RTP header with media payload type for vendor codec.
 
+```
+A2DP configured at 48.0 KHz. Codec: AAC-ELD, VBR max: 256 kbps. 3 frames * (2+320) bytes = 966 per RTP (max=986) every 30.00 ms
+```
+
 ### RTP Payload Structure
 
 Each RTP packet contains **3 AAC-ELD frames**, each preceded by a 4-byte Apple header:
 
-```
+
 +-- Frame 1 ----------------------------------------+
 | Apple Header (4 bytes) | Raw AAC-ELD AU (~300 bytes) |
 +-- Frame 2 ----------------------------------------+
@@ -94,7 +98,6 @@ Each RTP packet contains **3 AAC-ELD frames**, each preceded by a 4-byte Apple h
 +---------------------------------------------------+
 
 Total payload: ~912 bytes (3 * (4 + ~300))
-```
 
 ### Apple AAC-ELD Size Header (4 bytes per frame)
 
