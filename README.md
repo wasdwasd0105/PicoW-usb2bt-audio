@@ -22,7 +22,7 @@ The input is 16-bit 48000Hz PCM audio, and it can steam LDAC audio at 303(Mobile
 Only work on Pico 2 W. The input is 16-bit 48000Hz PCM audio, and use fdk-acc to encode the aac.
 
 #### AAC-ELD
-The secret that makes AirPods have significant better sound quality on IOS/MACOS than other OS. 
+The secret makes AirPods have significant better sound quality on iOS/MacOS
 
 
 #### SBC
