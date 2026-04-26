@@ -54,14 +54,18 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
     bd_addr_t address;
     uint32_t cod;
 
-    // Service Class: Rendering | Audio, Major Device Class: Audio
-    const uint32_t bluetooth_speaker_cod = 0x200000 | 0x040000 | 0x000400;
+    // Major Device Class = Audio/Video (bits 12..8 = 0b00100)
+    const uint32_t audio_major_cod_mask = 0x001F00;
+    const uint32_t audio_major_cod      = 0x000400;
 
     switch (hci_event_packet_get_type(packet)){
         case  BTSTACK_EVENT_STATE:
             if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) return;
             if ( strcmp(device_addr_string , "00:00:00:00:00:00") == 0 ){
                 gap_start_scanning();
+            } else {
+                printf("Have stored link key, reconnecting to %s\n", bd_addr_to_str(device_addr));
+                a2dp_source_reconnect();
             }
             break;
 
@@ -70,7 +74,7 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             hci_event_pin_code_request_get_bd_addr(packet, address);
             gap_pin_code_response(address, "0000");
             break;
-        case GAP_EVENT_INQUIRY_RESULT:
+        case GAP_EVENT_INQUIRY_RESULT: {
             gap_event_inquiry_result_get_bd_addr(packet, address);
             // print info
             printf("Device found: %s ",  bd_addr_to_str(address));
@@ -79,15 +83,18 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             if (gap_event_inquiry_result_get_rssi_available(packet)){
                 printf(", rssi %d dBm", (int8_t) gap_event_inquiry_result_get_rssi(packet));
             }
+            bool name_matches_target = false;
             if (gap_event_inquiry_result_get_name_available(packet)){
                 char name_buffer[240];
                 int name_len = gap_event_inquiry_result_get_name_len(packet);
                 memcpy(name_buffer, gap_event_inquiry_result_get_name(packet), name_len);
                 name_buffer[name_len] = 0;
                 printf(", name '%s'", name_buffer);
+                if (strstr(name_buffer, "WF-1000XM4") != NULL) name_matches_target = true;
             }
             printf("\n");
-            if ((cod & bluetooth_speaker_cod) == bluetooth_speaker_cod){
+            bool cod_is_audio = (cod & audio_major_cod_mask) == audio_major_cod;
+            if (cod_is_audio || name_matches_target){
                 memcpy(device_addr, address, 6);
                 printf("Bluetooth speaker detected, trying to connect to %s...\n", bd_addr_to_str(device_addr));
                 scan_active = false;
@@ -105,6 +112,7 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
                 avdtp_source_establish_stream();
             }
             break;
+        }
         case GAP_EVENT_INQUIRY_COMPLETE:
             if (scan_active){
                 printf("No Bluetooth speakers found, scanning again...\n");
@@ -213,6 +221,7 @@ void bt_hci_init(void){
     gap_set_local_name("Pico USB Audio");
     gap_discoverable_control(0);
     gap_set_class_of_device(0x200408);
+    gap_set_bondable_mode(1);
 
     /* Register for HCI events */
     hci_event_callback_registration.callback = &hci_packet_handler;
