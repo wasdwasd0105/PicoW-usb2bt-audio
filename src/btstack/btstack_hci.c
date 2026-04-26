@@ -83,18 +83,16 @@ static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
             if (gap_event_inquiry_result_get_rssi_available(packet)){
                 printf(", rssi %d dBm", (int8_t) gap_event_inquiry_result_get_rssi(packet));
             }
-            bool name_matches_target = false;
             if (gap_event_inquiry_result_get_name_available(packet)){
                 char name_buffer[240];
                 int name_len = gap_event_inquiry_result_get_name_len(packet);
                 memcpy(name_buffer, gap_event_inquiry_result_get_name(packet), name_len);
                 name_buffer[name_len] = 0;
                 printf(", name '%s'", name_buffer);
-                if (strstr(name_buffer, "WF-1000XM4") != NULL) name_matches_target = true;
             }
             printf("\n");
             bool cod_is_audio = (cod & audio_major_cod_mask) == audio_major_cod;
-            if (cod_is_audio || name_matches_target){
+            if (cod_is_audio){
                 memcpy(device_addr, address, 6);
                 printf("Bluetooth speaker detected, trying to connect to %s...\n", bd_addr_to_str(device_addr));
                 scan_active = false;
